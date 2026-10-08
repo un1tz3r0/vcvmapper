@@ -1,16 +1,16 @@
 #include "plugin.hpp"
 #include "core/Target.hpp"
-#include "ui/Oled.hpp"
-#include "ui/Panel.hpp"
+#include "kit/Nvg.hpp"
+#include "kit/OledDisplay.hpp"
+#include "kit/PanelArt.hpp"
+#include "pin/Layout.hpp"
+#include "pin/View.hpp"
 #include <atomic>
 
 using namespace puppeteer;
+using namespace pin;
 
 struct Pin : Module {
-	enum ParamId { LEARN_PARAM, DEPTH_PARAM, PARAMS_LEN };
-	enum InputId { CV_INPUT, INPUTS_LEN };
-	enum OutputId { CV_OUTPUT, OUTPUTS_LEN };
-	enum LightId { LEARN_LIGHT, LIGHTS_LEN };
 	enum Mode { MODULATE, OVERWRITE };
 
 	// UI thread
@@ -46,7 +46,7 @@ struct Pin : Module {
 		configOutput(CV_OUTPUT, "Target value");
 		configLight(LEARN_LIGHT, "Learning");
 		handle.text = "Pin";
-		handle.color = ACCENTS[0].trace;
+		handle.color = kit::nvg(kit::Theme::accent(0).field);
 		APP->engine->addParamHandle(&handle);
 		divider.setDivision(32);
 	}
@@ -180,7 +180,7 @@ struct Pin : Module {
 		if (json_t* j = json_object_get(rootJ, "bipolar"))
 			bipolar = json_boolean_value(j);
 		if (json_t* j = json_object_get(rootJ, "accent"))
-			accent = clamp((int) json_integer_value(j), 0, (int) ACCENTS.size() - 1);
+			accent = clamp((int) json_integer_value(j), 0, (int) std::size(kit::Theme::ACCENTS) - 1);
 		json_t* baseJ = json_object_get(rootJ, "base");
 		assign(Target::fromJson(json_object_get(rootJ, "target")), baseJ ? json_number_value(baseJ) : -1.f);
 
@@ -221,13 +221,14 @@ void Pin::bind(const Target& t) {
 }
 
 
-struct PinScreen : OledDisplay {
+struct PinScreen : kit::OledDisplay {
 	Pin* module = nullptr;
 	TargetInfo info;
 	std::array<float, 64> trace{};
 	size_t head = 0;
 
 	void step() override {
+		theme = kit::Theme::accent(module ? module->accent : 0);
 		if (module) {
 			info = describe(module->target, module->value);
 			trace[head++ % trace.size()] = module->value;
@@ -235,77 +236,35 @@ struct PinScreen : OledDisplay {
 		OledDisplay::step();
 	}
 
-	/** Centred message lines when there is nothing to plot. */
-	std::vector<std::string> message() const {
+	ViewState state() const {
+		ViewState s;
 		if (!module)
-			return {"PIN"};
-		if (module->learning)
-			return {"TOUCH A", "KNOB OR", "CLICK A", "LIGHT"};
-		if (!module->target)
-			return {"PRESS", "LEARN"};
-		if (info.module.empty())
-			return {"TARGET", "MISSING"};
-		if (!module->held())
-			return {"IN USE", "BY OTHER", "MAPPER"};
-		return {};
+			s.message = {"PIN"};
+		else if (module->learning)
+			s.message = {"TOUCH A", "KNOB OR", "CLICK A", "LIGHT"}, s.alert = true;
+		else if (!module->target)
+			s.message = {"PRESS", "LEARN"};
+		else if (info.module.empty())
+			s.message = {"TARGET", "MISSING"};
+		else if (!module->held())
+			s.message = {"IN USE", "BY OTHER", "MAPPER"};
+		if (!s.message.empty())
+			return s;
+
+		s.module = info.module;
+		s.name = info.name;
+		s.value = info.value;
+		bool light = module->target.kind == Kind::Light;
+		s.tag = light ? "LIGHT 0..10" : std::string(module->mode == Pin::MODULATE ? "MOD " : "SET ") + (module->bipolar ? "-5..5" : "0..10");
+		for (size_t i = 0; i < trace.size(); i++)
+			s.trace.push_back(trace[(head + i) % trace.size()]);
+		if (!light && module->mode == Pin::MODULATE && module->driving)
+			s.base = module->base;
+		return s;
 	}
 
-	void drawScreen(const DrawArgs& args) override {
-		NVGcontext* vg = args.vg;
-		const Accent& a = ACCENTS[module ? module->accent : 0];
-		const float w = box.size.x - 2 * PAD, h = box.size.y;
-
-		std::vector<std::string> lines = message();
-		if (!lines.empty()) {
-			nvgFontSize(vg, 8.f);
-			nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-			float y = h / 2 - 5.f * (lines.size() - 1);
-			for (const std::string& line : lines) {
-				glowText(vg, box.size.x / 2, y, line, module && module->learning ? a.highlight : a.trace);
-				y += 10.f;
-			}
-			return;
-		}
-
-		nvgFontSize(vg, 8.f);
-		nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_BASELINE);
-		glowText(vg, PAD, 10.f, fit(vg, info.module, w), a.trace);
-		glowText(vg, PAD, 19.f, fit(vg, info.name, w), a.highlight);
-
-		const float y0 = 26.f, y1 = h - 22.f;
-		auto Y = [&](float v) { return y1 - v * (y1 - y0); };
-
-		nvgBeginPath(vg);
-		nvgRect(vg, PAD, y0, w, y1 - y0);
-		nvgStrokeColor(vg, nvgTransRGBAf(a.trace, 0.18f));
-		nvgStrokeWidth(vg, 0.5f);
-		nvgStroke(vg);
-
-		bool showBase = module->target.kind == Kind::Param && module->mode == Pin::MODULATE && module->driving;
-		if (showBase && module->base >= 0.f) {
-			nvgBeginPath(vg);
-			nvgMoveTo(vg, PAD, Y(module->base));
-			nvgLineTo(vg, PAD + w, Y(module->base));
-			glowStroke(vg, nvgTransRGBAf(a.highlight, 0.7f), 0.6f);
-		}
-
-		nvgBeginPath(vg);
-		for (size_t i = 0; i < trace.size(); i++) {
-			float x = PAD + w * i / (trace.size() - 1);
-			float y = Y(trace[(head + i) % trace.size()]);
-			if (i == 0)
-				nvgMoveTo(vg, x, y);
-			else
-				nvgLineTo(vg, x, y);
-		}
-		glowStroke(vg, a.trace, 1.f);
-
-		glowText(vg, PAD, h - 11.f, fit(vg, info.value, w), a.trace);
-
-		nvgFontSize(vg, 6.5f);
-		std::string tag = module->target.kind == Kind::Light ? "LIGHT 0..10"
-			: std::string(module->mode == Pin::MODULATE ? "MOD " : "SET ") + (module->bipolar ? "-5..5" : "0..10");
-		glowText(vg, PAD, h - 3.5f, fit(vg, tag, w), nvgTransRGBAf(a.trace, 0.6f));
+	void paintScene(kit::Painter& painter) override {
+		paint(painter, theme, state());
 	}
 };
 
@@ -318,26 +277,14 @@ struct PinWidget : ModuleWidget {
 
 	PinWidget(Pin* module) {
 		setModule(module);
-		auto* panel = new PanelWidget(4, "pin");
-		panel->label(Vec(10.16, 55.f), "LEARN")
-			->label(Vec(10.16, 70.f), "DEPTH")
-			->label(Vec(10.16, 84.5f), "IN")
-			->island(Vec(1.6f, 96.5f), Vec(17.12f, 20.5f))
-			->label(Vec(10.16, 101.5f), "OUT", true);
-		setPanel(panel);
+		const kit::Panel panel = pin::panel();
+		kit::addPanel(this, panel);
 
-		addChild(createWidget<ThemedScrew>(Vec(RACK_GRID_WIDTH, 0)));
-		addChild(createWidget<ThemedScrew>(Vec(box.size.x - 2 * RACK_GRID_WIDTH, RACK_GRID_HEIGHT - RACK_GRID_WIDTH)));
-
-		auto* screen = createWidget<PinScreen>(mm2px(Vec(1.6f, 12.f)));
-		screen->box.size = mm2px(Vec(17.12f, 38.f));
+		const kit::Panel::Rect& glass = panel.screen;
+		auto* screen = createWidget<PinScreen>(mm2px(Vec(glass.min.x, glass.min.y)));
+		screen->box.size = mm2px(Vec(glass.max.x - glass.min.x, glass.max.y - glass.min.y));
 		screen->module = module;
 		addChild(screen);
-
-		addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(mm2px(Vec(10.16, 61.f)), module, Pin::LEARN_PARAM, Pin::LEARN_LIGHT));
-		addParam(createParamCentered<Trimpot>(mm2px(Vec(10.16, 75.5f)), module, Pin::DEPTH_PARAM));
-		addInput(createInputCentered<ThemedPJ301MPort>(mm2px(Vec(10.16, 90.5f)), module, Pin::CV_INPUT));
-		addOutput(createOutputCentered<ThemedPJ301MPort>(mm2px(Vec(10.16, 109.f)), module, Pin::CV_OUTPUT));
 	}
 
 	void step() override {
@@ -368,7 +315,7 @@ struct PinWidget : ModuleWidget {
 			refresh(m->target, this);
 			m->acquire();
 		}
-		m->handle.color = ACCENTS[m->accent].trace;
+		m->handle.color = kit::nvg(kit::Theme::accent(m->accent).field);
 	}
 
 	/** A touched knob or switch wins; otherwise a click near a light binds that light. */
@@ -409,7 +356,7 @@ struct PinWidget : ModuleWidget {
 		menu->addChild(createIndexSubmenuItem("CV range", {"-5 V to +5 V", "0 V to 10 V"},
 			[=] { return m->bipolar ? 0 : 1; },
 			[=](size_t i) { m->bipolar = i == 0; }));
-		menu->addChild(createIndexPtrSubmenuItem("Screen colour", accentNames(), &m->accent));
+		menu->addChild(createIndexPtrSubmenuItem("Screen colour", std::vector<std::string>(std::begin(kit::Theme::ACCENTS), std::end(kit::Theme::ACCENTS)), &m->accent));
 	}
 };
 
