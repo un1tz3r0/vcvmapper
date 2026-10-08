@@ -1,0 +1,23 @@
+{
+  "slug": "Puppeteer",
+  "name": "Puppeteer",
+  "version": "2.0.1",
+  "license": "MIT",
+  "brand": "un1tz3r0",
+  "author": "Victor Michael Ondras-Condino",
+  "authorEmail": "",
+  "authorUrl": "https://github.com/un1tz3r0",
+  "pluginUrl": "https://github.com/un1tz3r0/vcvmapper",
+  "manualUrl": "https://github.com/un1tz3r0/vcvmapper#readme",
+  "sourceUrl": "https://github.com/un1tz3r0/vcvmapper",
+  "donateUrl": "",
+  "changelogUrl": "",
+  "modules": [
+    {
+      "slug": "Pin",
+      "name": "Pin",
+      "description": "Binds one jack to any knob, switch, button or light on another module, in both directions.",
+      "tags": ["Utility", "Controller"]
+    }
+  ]
+}
