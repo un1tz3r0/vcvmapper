@@ -1,41 +1,21 @@
 #include "plugin.hpp"
-#include "core/Target.hpp"
+#include "core/Binding.hpp"
+#include "kit/Menus.hpp"
 #include "kit/Nvg.hpp"
 #include "kit/OledDisplay.hpp"
 #include "kit/PanelArt.hpp"
 #include "pin/Layout.hpp"
 #include "pin/View.hpp"
-#include <atomic>
 
 using namespace puppeteer;
 using namespace pin;
 
-struct Pin : Module {
-	enum Mode { MODULATE, OVERWRITE };
+struct Pin : Module, BindingHost {
+	enum Learn { OFF, REPLACE, ADD };
 
-	// UI thread
-	Target target;
-	bool pasted = false;
-
-	// Read by the audio thread. The engine owns the handle and clears it when the target is deleted.
-	ParamHandle handle;
-	std::atomic<Kind> kind{Kind::None};
-	std::atomic<int64_t> lightModuleId{-1};
-	std::atomic<int> lightId{0};
-	std::atomic<bool> learning{false};
-	std::atomic<uint32_t> generation{0};
-	std::atomic<float> startBase{-1.f};
-	int mode = MODULATE;
-	bool bipolar = true;
+	Binding binding;
 	int accent = 0;
-
-	// Audio thread, all in scaled 0..1 units of the target param
-	uint32_t seen = 0;
-	float base = -1.f;     // where the hand left the knob
-	float written = -1.f;  // our last write, to tell it apart from a hand's
-	float value = 0.f;     // current target reading, also shown on the screen
-	bool driving = false;
-	dsp::ClockDivider divider;
+	std::atomic<int> learning{OFF};
 	dsp::BooleanTrigger learnTrigger;
 
 	Pin() {
@@ -45,180 +25,71 @@ struct Pin : Module {
 		configInput(CV_INPUT, "Control");
 		configOutput(CV_OUTPUT, "Target value");
 		configLight(LEARN_LIGHT, "Learning");
-		handle.text = "Pin";
-		handle.color = kit::nvg(kit::Theme::accent(0).field);
-		APP->engine->addParamHandle(&handle);
-		divider.setDivision(32);
 	}
 
-	~Pin() {
-		APP->engine->removeParamHandle(&handle);
+	Binding* bindingAt(int index) override {
+		return index == 0 ? &this->binding : nullptr;
 	}
 
 	void process(const ProcessArgs& args) override {
 		if (learnTrigger.process(params[LEARN_PARAM].getValue() > 0.f))
-			learning = !learning;
+			learning = learning ? OFF : REPLACE;
 		bool blink = learning && std::fmod(args.frame * (double) args.sampleTime, 0.5) < 0.25;
 		lights[LEARN_LIGHT].setBrightnessSmooth(blink ? 1.f : 0.f, args.sampleTime);
-
-		if (seen != generation) {
-			seen = generation;
-			base = startBase;
-			written = -1.f;
-			driving = false;
-		}
-
-		Kind k = kind;
-		if (k == Kind::Param && processParam())
-			outputs[CV_OUTPUT].setVoltage(bipolar ? 10.f * value - 5.f : 10.f * value);
-		else if (k == Kind::Light && processLight())
-			outputs[CV_OUTPUT].setVoltage(10.f * value);
-		else {
-			value = 0.f;
-			outputs[CV_OUTPUT].setVoltage(0.f);
-		}
+		binding.process(args, inputs[CV_INPUT], outputs[CV_OUTPUT], params[DEPTH_PARAM].getValue());
 	}
 
-	/** False when the param can't be reached: deleted, held by another mapper, or unbounded. */
-	bool processParam() {
-		Module* m = handle.module;
-		ParamQuantity* pq = m && handle.paramId < (int) m->paramQuantities.size() ? m->paramQuantities[handle.paramId] : nullptr;
-		if (!pq || !pq->isBounded()) {
-			driving = false;
-			return false;
-		}
-		value = pq->getScaledValue();
-
-		if (!inputs[CV_INPUT].isConnected()) {
-			// Cable pulled: hand the knob back where the hand left it.
-			if (driving && mode == MODULATE)
-				value = write(m, pq, base);
-			driving = false;
-			base = value;
-			return true;
-		}
-		if (!driving) {
-			driving = true;
-			written = -1.f;
-			if (base < 0.f)
-				base = value;
-		}
-		if (!divider.process())
-			return true;
-		// Anything that moved the knob since our last write was a hand (or MIDI, or a preset): follow it.
-		if (written >= 0.f && std::fabs(value - written) > 1e-4f)
-			base = clamp(base + value - written, 0.f, 1.f);
-		float home = mode == MODULATE ? base : bipolar ? 0.5f : 0.f;
-		float cv = inputs[CV_INPUT].getVoltage() / 10.f;
-		value = write(m, pq, clamp(home + params[DEPTH_PARAM].getValue() * cv, 0.f, 1.f));
-		return true;
+	void processBypass(const ProcessArgs& args) override {
+		Module::processBypass(args);
+		binding.bypass(args);
 	}
 
-	float write(Module* m, ParamQuantity* pq, float scaled) {
-		float v = pq->fromScaled(scaled);
-		if (pq->snapEnabled)
-			v = std::round(v);
-		APP->engine->setParamValue(m, handle.paramId, v);
-		return written = pq->toScaled(v);
+	void onReset(const ResetEvent& e) override {
+		Module::onReset(e);
+		binding.settings = Settings();
+		binding.selector = Selector();
+		binding.changed();
 	}
-
-	bool processLight() {
-		// Looked up every sample: a pointer kept across process() calls could outlive a deleted module.
-		Module* m = APP->engine->getModule_NoLock(lightModuleId);
-		int id = lightId;
-		if (!m || id >= (int) m->lights.size())
-			return false;
-		value = clamp(m->lights[id].getBrightness(), 0.f, 1.f);
-		return true;
-	}
-
-	/** Sets the target's fields for both threads. The param handle is claimed separately. */
-	void assign(const Target& t, float base = -1.f) {
-		target = t;
-		lightModuleId = t.kind == Kind::Light ? t.moduleId : -1;
-		lightId = t.index;
-		startBase = base;
-		kind = t.kind;
-		generation++;
-	}
-
-	/** Claims the param handle, never taking it from another mapper. UI thread. */
-	void acquire() {
-		bool want = target.kind == Kind::Param;
-		if (want ? held() : handle.moduleId < 0)
-			return;
-		if (want && APP->engine->getParamHandle(target.moduleId, target.index))
-			return;
-		APP->engine->updateParamHandle(&handle, want ? target.moduleId : -1, want ? target.index : 0, false);
-	}
-
-	bool held() const {
-		return target.kind != Kind::Param || (handle.moduleId == target.moduleId && handle.paramId == target.index);
-	}
-
-	void setTarget(const Target& t, float base = -1.f) {
-		assign(t, base);
-		acquire();
-	}
-
-	void bind(const Target& t);
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
-		json_object_set_new(rootJ, "mode", json_integer(mode));
-		json_object_set_new(rootJ, "bipolar", json_boolean(bipolar));
 		json_object_set_new(rootJ, "accent", json_integer(accent));
-		json_object_set_new(rootJ, "base", json_real(base));
-		if (target)
-			json_object_set_new(rootJ, "target", target.toJson());
+		json_object_set_new(rootJ, "binding", binding.toJson());
 		return rootJ;
 	}
 
 	void dataFromJson(json_t* rootJ) override {
-		if (json_t* j = json_object_get(rootJ, "mode"))
-			mode = clamp((int) json_integer_value(j), 0, 1);
-		if (json_t* j = json_object_get(rootJ, "bipolar"))
-			bipolar = json_boolean_value(j);
 		if (json_t* j = json_object_get(rootJ, "accent"))
 			accent = clamp((int) json_integer_value(j), 0, (int) std::size(kit::Theme::ACCENTS) - 1);
-		json_t* baseJ = json_object_get(rootJ, "base");
-		assign(Target::fromJson(json_object_get(rootJ, "target")), baseJ ? json_number_value(baseJ) : -1.f);
+		json_t* bindingJ = json_object_get(rootJ, "binding");
+		if (bindingJ)
+			binding.fromJson(bindingJ, this);
+		else {
+			bindingJ = legacy(rootJ);
+			binding.fromJson(bindingJ, this);
+			json_decref(bindingJ);
+		}
+	}
 
-		// Rack strips module ids on paste, duplicate and selection import, so a missing id means
-		// the stored target may belong to the original. The widget remaps it once positions are final.
-		pasted = id < 0;
-		if (!pasted && target.kind == Kind::Param)
-			APP->engine->updateParamHandle_NoLock(&handle, target.moduleId, target.index, false);
+	/** Pin 2.0 kept one target and its settings at the top level. */
+	static json_t* legacy(json_t* rootJ) {
+		json_t* targetJ = json_object_get(rootJ, "target");
+		bool overwrite = json_integer_value(json_object_get(rootJ, "mode")) == 1;
+		bool bipolar = !json_is_false(json_object_get(rootJ, "bipolar"));
+		json_t* targetsJ = json_array();
+		json_t* basesJ = json_array();
+		if (Target t = Target::fromJson(targetJ)) {
+			json_array_append(targetsJ, targetJ);
+			json_t* baseJ = json_object_get(rootJ, "base");
+			if (t.kind == Kind::Param && baseJ && json_number_value(baseJ) >= 0.0)
+				json_array_append_new(basesJ, json_pack("[I, i, f]", (json_int_t) t.moduleId, t.index, json_number_value(baseJ)));
+		}
+		return json_pack("{s:{s:s, s:b}, s:{s:o}, s:o}",
+			"settings", "mode", overwrite ? "overwrite" : "modulate", "bipolar", bipolar,
+			"selector", "targets", targetsJ,
+			"bases", basesJ);
 	}
 };
-
-/** Undo and redo for learn and unbind. */
-struct BindAction : history::ModuleAction {
-	Target before, after;
-
-	BindAction(int64_t id, Target before, Target after) : before(std::move(before)), after(std::move(after)) {
-		moduleId = id;
-		name = "bind Pin";
-	}
-
-	void apply(const Target& t) {
-		if (auto* m = dynamic_cast<Pin*>(APP->engine->getModule(moduleId)))
-			m->setTarget(t);
-	}
-
-	void undo() override {
-		apply(before);
-	}
-
-	void redo() override {
-		apply(after);
-	}
-};
-
-void Pin::bind(const Target& t) {
-	APP->history->push(new BindAction(id, target, t));
-	setTarget(t);
-}
 
 
 struct PinScreen : kit::OledDisplay {
@@ -227,39 +98,62 @@ struct PinScreen : kit::OledDisplay {
 	std::array<float, 64> trace{};
 	size_t head = 0;
 
+	const Lane* first() const {
+		const Plan* p = module ? module->binding.plan() : nullptr;
+		return p && p->count ? &p->lanes[0] : nullptr;
+	}
+
 	void step() override {
 		theme = kit::Theme::accent(module ? module->accent : 0);
-		if (module) {
-			info = describe(module->target, module->value);
-			trace[head++ % trace.size()] = module->value;
+		if (const Lane* l = first()) {
+			float x = l->position.load();
+			info = describe(l->target, x);
+			trace[head++ % trace.size()] = std::isnan(x) ? 0.f : x;
 		}
+		else
+			info = {};
 		OledDisplay::step();
 	}
 
 	ViewState state() const {
 		ViewState s;
+		const Lane* l = first();
+		const Binding* b = module ? &module->binding : nullptr;
 		if (!module)
 			s.message = {"PIN"};
 		else if (module->learning)
-			s.message = {"TOUCH A", "KNOB OR", "CLICK A", "LIGHT"}, s.alert = true;
-		else if (!module->target)
+			s.message = module->learning == Pin::ADD ? std::vector<std::string>{"TOUCH", "ANOTHER", "TARGET"}
+				: std::vector<std::string>{"TOUCH A", "KNOB OR", "CLICK A", "LIGHT"}, s.alert = true;
+		else if (b->selector.empty())
 			s.message = {"PRESS", "LEARN"};
+		else if (!b->error.empty())
+			s.message = {"BAD", "PATTERN"};
+		else if (!l)
+			s.message = {"NO", "MATCH"};
 		else if (info.module.empty())
 			s.message = {"TARGET", "MISSING"};
-		else if (!module->held())
+		else if (l->lease && !l->lease.slot->bound)
 			s.message = {"IN USE", "BY OTHER", "MAPPER"};
 		if (!s.message.empty())
 			return s;
 
+		int count = b->plan()->count;
+		const Settings& set = b->settings;
 		s.module = info.module;
 		s.name = info.name;
 		s.value = info.value;
-		bool light = module->target.kind == Kind::Light;
-		s.tag = light ? "LIGHT 0..10" : std::string(module->mode == Pin::MODULATE ? "MOD " : "SET ") + (module->bipolar ? "-5..5" : "0..10");
+		if (l->target.kind == Kind::Light)
+			s.tag = "LIGHT 0..10";
+		else if (l->momentary)
+			s.tag = "BUTTON";
+		else
+			s.tag = std::string(set.mode == Mode::Modulate ? "MOD " : set.mode == Mode::Overwrite ? "SET " : "PICK ") + (set.shape.bipolar ? "-5..5" : "0..10");
+		if (count > 1)
+			s.tag += string::f(" x%d", count);
 		for (size_t i = 0; i < trace.size(); i++)
 			s.trace.push_back(trace[(head + i) % trace.size()]);
-		if (!light && module->mode == Pin::MODULATE && module->driving)
-			s.base = module->base;
+		if (l->lease && set.mode == Mode::Modulate && !l->momentary)
+			s.base = l->lease.slot->base.load();
 		return s;
 	}
 
@@ -273,7 +167,6 @@ struct PinWidget : ModuleWidget {
 	bool wasLearning = false;
 	bool mouseWas = false;
 	Target candidate;
-	int frame = 0;
 
 	PinWidget(Pin* module) {
 		setModule(module);
@@ -292,13 +185,8 @@ struct PinWidget : ModuleWidget {
 		Pin* m = getModule<Pin>();
 		if (!m)
 			return;
-
-		if (m->pasted) {
-			m->pasted = false;
-			Target t = m->target;
-			remap(t, this);
-			m->setTarget(t, m->startBase);
-		}
+		m->binding.color = kit::nvg(kit::Theme::accent(m->accent).field);
+		m->binding.update(this);
 
 		bool learning = m->learning;
 		if (learning && !wasLearning) {
@@ -309,13 +197,6 @@ struct PinWidget : ModuleWidget {
 		wasLearning = learning;
 		if (learning)
 			learn(m);
-
-		// Keep paste-remap data current, and pick the param up if another mapper lets go of it.
-		if (++frame % 60 == 0) {
-			refresh(m->target, this);
-			m->acquire();
-		}
-		m->handle.color = kit::nvg(kit::Theme::accent(m->accent).field);
 	}
 
 	/** A touched knob or switch wins; otherwise a click near a light binds that light. */
@@ -340,22 +221,130 @@ struct PinWidget : ModuleWidget {
 
 	void finish(Pin* m, Target t) {
 		refresh(t, this);
-		m->bind(t);
-		m->learning = false;
+		bool add = m->learning == Pin::ADD;
+		m->binding.edit(m, 0, add ? "learn another Pin target" : "learn Pin target", [&](Selector& s) {
+			if (!add)
+				s = Selector();
+			if (std::none_of(s.targets.begin(), s.targets.end(), [&](const Target& u) { return u.key() == t.key(); }))
+				s.targets.push_back(t);
+		}, t);
+		m->learning = Pin::OFF;
 		candidate = {};
+	}
+
+	static std::string label(const Target& t) {
+		TargetInfo info = describe(t, 0.f);
+		return info.module.empty() ? "Missing module" : info.module + ": " + info.name;
+	}
+
+	/** The clause that matches this target on every module of its model. */
+	static std::string everyInstance(const Target& t) {
+		return t.plugin + "/" + t.model + ":" + (t.kind == Kind::Light ? "light:#" : "#") + std::to_string(t.index);
+	}
+
+	void appendTargets(Menu* menu, Pin* m) {
+		Binding& b = m->binding;
+		const Plan* p = b.plan();
+		for (int i = 0; p && i < p->count; i++) {
+			Target t = p->lanes[i].target;
+			bool learned = std::any_of(b.selector.targets.begin(), b.selector.targets.end(), [&](const Target& u) { return u.key() == t.key(); });
+			menu->addChild(createSubmenuItem(string::f("%d. %s", i + 1, label(t).c_str()), "", [=](Menu* sub) {
+				auto without = [=](Selector& s) {
+					s.targets.erase(std::remove_if(s.targets.begin(), s.targets.end(), [&](const Target& u) { return u.key() == t.key(); }), s.targets.end());
+				};
+				if (!learned) {
+					sub->addChild(createMenuItem("Leave out", "", [=] {
+						m->binding.edit(m, 0, "leave out Pin target", [&](Selector& s) { s.excluded.push_back(t); });
+					}));
+					return;
+				}
+				sub->addChild(createMenuItem("Remove", "", [=] { m->binding.edit(m, 0, "remove Pin target", without); }));
+				std::string model = describe(t, 0.f).module;
+				if (!model.empty())
+					sub->addChild(createMenuItem("On every " + model, "", [=] {
+						m->binding.edit(m, 0, "widen Pin target", [&](Selector& s) {
+							without(s);
+							s.pattern += (s.pattern.empty() ? "" : ", ") + everyInstance(t);
+						});
+					}));
+			}));
+		}
+		if (!b.selector.excluded.empty())
+			menu->addChild(createMenuItem(string::f("Bring back %d left out", (int) b.selector.excluded.size()), "", [=] {
+				m->binding.edit(m, 0, "bring back Pin targets", [](Selector& s) { s.excluded.clear(); });
+			}));
+	}
+
+	void appendPattern(Menu* menu, Pin* m) {
+		auto* entry = new kit::TextEntry;
+		entry->text = m->binding.selector.pattern;
+		entry->placeholder = "Fundamental/VCO:Freq*";
+		entry->commit = [=](const std::string& text) {
+			m->binding.edit(m, 0, "edit Pin pattern", [&](Selector& s) { s.pattern = text; });
+		};
+		menu->addChild(entry);
+		menu->addChild(createMenuLabel("plugin/model:param, comma between several"));
+		menu->addChild(createMenuLabel("* and ? match any text; #3 or #0-7 are ids"));
+		menu->addChild(createMenuLabel("light:name or light:#N reads lights"));
+		if (!m->binding.error.empty())
+			menu->addChild(createMenuLabel(m->binding.error));
+	}
+
+	void appendShape(Menu* menu, Pin* m) {
+		Shape* sh = &m->binding.settings.shape;
+		auto set = [=](auto apply) { return [=](float v) { apply(v); m->binding.changed(); }; };
+		menu->addChild(createBoolMenuItem("Invert", "", [=] { return sh->invert; }, [=](bool v) { sh->invert = v; m->binding.changed(); }));
+		menu->addChild(kit::createSlider("Curve", "", -1.f, 1.f, 0.f, 2, [=] { return sh->curve; }, set([=](float v) { sh->curve = v; })));
+		menu->addChild(kit::createSlider("Knob from", "%", 0.f, 100.f, 0.f, 0, [=] { return sh->lo * 100.f; }, set([=](float v) { sh->lo = v / 100.f; })));
+		menu->addChild(kit::createSlider("Knob to", "%", 0.f, 100.f, 100.f, 0, [=] { return sh->hi * 100.f; }, set([=](float v) { sh->hi = v / 100.f; })));
+		std::vector<int> steps = {0, 2, 3, 4, 5, 6, 8, 12, 16, 24, 32};
+		menu->addChild(createSubmenuItem("Steps", sh->steps ? std::to_string(sh->steps) : "Off", [=](Menu* sub) {
+			for (int n : steps)
+				sub->addChild(createCheckMenuItem(n ? std::to_string(n) : "Off", "", [=] { return sh->steps == n; }, [=] { sh->steps = n; m->binding.changed(); }));
+		}));
+	}
+
+	void appendTiming(Menu* menu, Pin* m) {
+		Settings* s = &m->binding.settings;
+		menu->addChild(kit::createSlider("Slew", " ms", 0.f, 2000.f, 0.f, 1, [=] { return s->slew; }, [=](float v) { s->slew = v; m->binding.changed(); }, 3.f));
+		menu->addChild(createSubmenuItem("Write rate", s->autoRate ? "Auto" : "", [=](Menu* sub) {
+			sub->addChild(createBoolMenuItem("Every sample for audio-rate CV", "", [=] { return s->autoRate; }, [=](bool v) { s->autoRate = v; m->binding.changed(); }));
+			sub->addChild(new MenuSeparator);
+			for (int n : {1, 4, 8, 16, 32, 64, 128})
+				sub->addChild(createCheckMenuItem(n == 1 ? "Every sample" : string::f("Every %d samples", n), "", [=] { return s->interval == n; }, [=] { s->interval = n; m->binding.changed(); }));
+		}));
+		menu->addChild(createSubmenuItem("Button hold", string::f("%g ms", s->hold), [=](Menu* sub) {
+			for (float ms : {0.f, 0.5f, 1.f, 2.f, 5.f, 10.f, 20.f, 50.f})
+				sub->addChild(createCheckMenuItem(string::f("%g ms", ms), "", [=] { return s->hold == ms; }, [=] { s->hold = ms; m->binding.changed(); }));
+		}));
 	}
 
 	void appendContextMenu(Menu* menu) override {
 		Pin* m = getModule<Pin>();
-		TargetInfo info = describe(m->target, m->value);
+		Binding& b = m->binding;
+		Settings* s = &b.settings;
+		const Plan* p = b.plan();
+		int count = p ? p->count : 0;
+
 		menu->addChild(new MenuSeparator);
-		menu->addChild(createMenuLabel(info.module.empty() ? "Not bound" : info.module + ": " + info.name));
-		menu->addChild(createMenuItem("Learn", "", [=] { m->learning = true; }));
-		menu->addChild(createMenuItem("Unbind", "", [=] { m->bind(Target()); }, !m->target));
-		menu->addChild(createIndexPtrSubmenuItem("Hand and CV", {"Modulate around the knob", "Overwrite the knob"}, &m->mode));
+		menu->addChild(createMenuLabel(count == 0 ? "Not bound" : count == 1 ? label(p->lanes[0].target) : string::f("%d targets", count)));
+		menu->addChild(createMenuItem("Learn", "", [=] { m->learning = Pin::REPLACE; }));
+		menu->addChild(createMenuItem("Learn another", "", [=] { m->learning = Pin::ADD; }, b.selector.empty()));
+		menu->addChild(createSubmenuItem("Targets", std::to_string(count), [=](Menu* sub) { appendTargets(sub, m); }));
+		menu->addChild(createSubmenuItem("Pattern", b.selector.pattern.empty() ? "" : "On", [=](Menu* sub) { appendPattern(sub, m); }));
+		menu->addChild(createMenuItem("Unbind all", "", [=] {
+			m->binding.edit(m, 0, "unbind Pin", [](Selector& s) { s = Selector(); });
+		}, b.selector.empty()));
+
+		menu->addChild(new MenuSeparator);
+		menu->addChild(createIndexSubmenuItem("Hand and CV", {"Modulate around the knob", "Overwrite the knob", "Pick up the knob"},
+			[=] { return (size_t) s->mode; },
+			[=](size_t i) { s->mode = Mode(i); m->binding.changed(); }));
 		menu->addChild(createIndexSubmenuItem("CV range", {"-5 V to +5 V", "0 V to 10 V"},
-			[=] { return m->bipolar ? 0 : 1; },
-			[=](size_t i) { m->bipolar = i == 0; }));
+			[=] { return s->shape.bipolar ? 0 : 1; },
+			[=](size_t i) { s->shape.bipolar = i == 0; m->binding.changed(); }));
+		menu->addChild(createSubmenuItem("Shape", "", [=](Menu* sub) { appendShape(sub, m); }));
+		appendTiming(menu, m);
 		menu->addChild(createIndexPtrSubmenuItem("Screen colour", std::vector<std::string>(std::begin(kit::Theme::ACCENTS), std::end(kit::Theme::ACCENTS)), &m->accent));
 	}
 };

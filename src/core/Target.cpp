@@ -71,6 +71,12 @@ bool remap(Target& t, app::ModuleWidget* owner) {
 	return false;
 }
 
+bool isMomentary(const Target& t) {
+	app::ModuleWidget* mw = t.kind == Kind::Param ? widgetOf(t.moduleId) : nullptr;
+	auto* sw = mw ? dynamic_cast<app::Switch*>(mw->getParam(t.index)) : nullptr;
+	return sw && sw->momentary;
+}
+
 static void eachLight(widget::Widget* w, const std::function<void(app::ModuleLightWidget*)>& f) {
 	for (widget::Widget* child : w->children) {
 		if (auto* lw = dynamic_cast<app::ModuleLightWidget*>(child))
