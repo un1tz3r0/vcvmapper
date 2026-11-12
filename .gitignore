@@ -6,3 +6,6 @@
 .DS_Store
 /tools/mockup
 /tools/*.svg
+/tools/enginetest/build
+/tools/enginetest/test
+/tools/enginetest/*.log
