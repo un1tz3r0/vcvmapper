@@ -1,5 +1,5 @@
 #pragma once
-#include "Shape.hpp"
+#include "Settings.hpp"
 #include "Slot.hpp"
 #include "Target.hpp"
 #include <atomic>
@@ -8,21 +8,6 @@
 #include <set>
 
 namespace puppeteer {
-
-/** How a binding's CV and a hand on the same knob get along. */
-enum class Mode { Modulate, Overwrite, PickUp };
-
-struct Settings {
-	Mode mode = Mode::Modulate;
-	Shape shape;
-	float slew = 0.f;     // ms
-	int interval = 32;    // frames between param writes
-	bool autoRate = true; // write every frame while the CV runs at audio rate
-	float hold = 1.f;     // ms a button stays down, however short the gate
-
-	json_t* toJson() const;
-	void fromJson(json_t* rootJ);
-};
 
 /** What a binding points at: learned targets in learn order, then whatever the pattern matches from left to
 right and top to bottom, minus the targets someone unmapped from the knob. At most 16, one per poly channel. */
@@ -78,8 +63,12 @@ struct Binding {
 
 	~Binding();
 
+	/** Why the binding isn't driving anything, for screens to word as they like. */
+	enum class Problem { None, Empty, BadPattern, NoMatch, Missing, InUse };
+	Problem problem() const;
+
 	// Audio thread
-	void process(const Module::ProcessArgs& args, Input& in, Output& out, float depth);
+	void process(const Module::ProcessArgs& args, Input& in, Output& out, float depth = 1.f);
 	void bypass(const Module::ProcessArgs& args);
 
 	// UI thread

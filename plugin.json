@@ -1,7 +1,7 @@
 {
   "slug": "Puppeteer",
   "name": "Puppeteer",
-  "version": "2.0.2",
+  "version": "2.2.0",
   "license": "MIT",
   "brand": "un1tz3r0",
   "author": "Victor Michael Ondras-Condino",
@@ -18,6 +18,12 @@
       "name": "Pin",
       "description": "Binds one jack to any knob, switch, button or light on another module, in both directions.",
       "tags": ["Utility", "Controller"]
+    },
+    {
+      "slug": "Strings",
+      "name": "Strings",
+      "description": "Eight channels that each bind a jack to knobs, switches, buttons or lights on other modules, edited from its screen.",
+      "tags": ["Utility", "Controller", "Polyphonic"]
     }
   ]
 }

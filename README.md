@@ -18,10 +18,18 @@ Several Pins can drive the same knob: their modulation adds up around the one ha
 
 **Shape** maps the CV onto part of the knob's travel, with a curve, inversion and steps. Params are written every 32 samples, or every sample while the CV runs at audio rate.
 
+**Strings** (14 HP) is eight Pins behind one screen. Each row of the screen is a channel, between its **IN** and **OUT** jacks: what it drives, a bar for the target's position with a mark at your hand's, and its mode.
+
+1. Click a row, or turn the left knob, to select a channel. The footer of the screen always says what the two knobs do.
+2. Press **LEARN** and touch a knob or light. Learning carries on down the channels while they are empty, so you can map several in one go; press **LEARN** again to stop.
+3. The right knob sets the selected channel's depth. Press **EDIT** for the rest of its settings: the left knob picks one, the right knob changes it.
+
+Everything Pin's menu offers (more targets, patterns, shape, timing) is in the context menu for the selected channel; right-click a row to open the menu for that channel.
+
 ## Building
 
 ```sh
 make RACK_DIR=/path/to/Rack-SDK install
 ```
 
-CI builds every platform on each push; tagged releases (`v*`) collect the `.vcvplugin` files in a draft GitHub release.
+`tools/mockup` draws the panels as SVG without Rack, and `tools/enginetest` runs the modules against Rack's engine built from source. CI builds every platform on each push; tagged releases (`v*`) collect the `.vcvplugin` files in a draft GitHub release.

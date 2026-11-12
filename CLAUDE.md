@@ -28,6 +28,10 @@ The leading 2 never changes. Rack 2 refuses to load a plugin whose version doesn
 - `src/kit/`: panel, knob and OLED screen kit shared with orbit. The headers that don't include `rack.hpp` stay that way
   so `tools/` can build them without the SDK.
 - `src/<module>/Layout.hpp` and `View.hpp`: a module's ids, panel and screen painting, pure for the same reason.
-- `src/core/`: target lookup, learn and remap helpers that every module uses.
-- `tools/mockup`: `make -C tools`, then `cd tools && ./mockup [rack-dir]` writes `pin-light.svg` and `pin-dark.svg` for
+- `src/core/`: the binding core every module is a thin view over: targets, slots shared per param, plans, settings
+  and their screen-editable fields, learn and the context menu. `Pattern.hpp`, `Shape.hpp` and `Settings.hpp` are pure.
+- `tools/mockup`: `make -C tools`, then `cd tools && ./mockup [rack-dir]` writes light and dark SVGs of every panel for
   checking a layout without running Rack. With a Rack source or SDK directory it draws Rack's real jacks, screws and label font.
+- `tools/enginetest`: `make RACK_SRC=/path/to/Rack && ./test` runs the modules headless against Rack's real engine
+  (see its Makefile for what it needs). Run it before pushing anything that touches `src/core` or a module's
+  `process()`, and add a check for each engine-side bug fixed.

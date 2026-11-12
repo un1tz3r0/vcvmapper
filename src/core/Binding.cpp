@@ -7,8 +7,8 @@ namespace puppeteer {
 static const char* MODES[] = {"modulate", "overwrite", "pickup"};
 
 json_t* Settings::toJson() const {
-	return json_pack("{s:s, s:b, s:f, s:f, s:f, s:b, s:i, s:f, s:i, s:b, s:f}",
-		"mode", MODES[int(mode)], "bipolar", shape.bipolar, "lo", shape.lo, "hi", shape.hi, "curve", shape.curve,
+	return json_pack("{s:s, s:f, s:b, s:f, s:f, s:f, s:b, s:i, s:f, s:i, s:b, s:f}",
+		"mode", MODES[int(mode)], "depth", depth, "bipolar", shape.bipolar, "lo", shape.lo, "hi", shape.hi, "curve", shape.curve,
 		"invert", shape.invert, "steps", shape.steps, "slew", slew, "interval", interval, "autoRate", autoRate,
 		"hold", hold);
 }
@@ -27,6 +27,7 @@ void Settings::fromJson(json_t* rootJ) {
 		for (int i = 0; i < 3; i++)
 			if (std::string(m) == MODES[i])
 				mode = Mode(i);
+	number("depth", depth, -1, 1);
 	flag("bipolar", shape.bipolar);
 	number("lo", shape.lo, 0, 1);
 	number("hi", shape.hi, 0, 1);
@@ -182,7 +183,7 @@ void Binding::drive(Lane& l, const Plan& p, float volts, float depth, const Modu
 	}
 	else {
 		float x = l.lag.process(s.shape.forward(volts), s.slew, args.sampleTime);
-		float y = p.rest + depth * (x - p.rest);
+		float y = p.rest + depth * s.depth * (x - p.rest);
 		float value = s.mode == Mode::Modulate ? y - p.rest : y;
 		if (value != l.sent) {
 			l.sent = value;
@@ -197,6 +198,20 @@ void Binding::drive(Lane& l, const Plan& p, float volts, float depth, const Modu
 	l.lease.slot->tick(args.frame);
 }
 
+
+Binding::Problem Binding::problem() const {
+	const Plan* p = plan();
+	if (selector.empty())
+		return Problem::Empty;
+	if (!error.empty())
+		return Problem::BadPattern;
+	if (!p || !p->count)
+		return Problem::NoMatch;
+	const Lane& l = p->lanes[0];
+	if (!widgetOf(l.target.moduleId))
+		return Problem::Missing;
+	return l.lease && !l.lease.slot->bound ? Problem::InUse : Problem::None;
+}
 
 void Binding::collect() {
 	if (!posting || next.load(std::memory_order_acquire))

@@ -1,7 +1,7 @@
 CXXFLAGS ?= -O2 -Wall -Wextra
 CXXFLAGS += -std=c++17 -I../src
 
-mockup: mockup.cpp $(wildcard *.hpp) $(wildcard ../src/kit/*.hpp) $(wildcard ../src/pin/*.hpp)
+mockup: mockup.cpp $(wildcard *.hpp) $(wildcard ../src/kit/*.hpp) $(wildcard ../src/pin/*.hpp ../src/strings/*.hpp ../src/core/Settings.hpp ../src/core/Shape.hpp)
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 clean:
