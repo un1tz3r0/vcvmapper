@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include <tuple>
 
 namespace puppeteer {
 using namespace rack;
@@ -18,6 +19,10 @@ struct Target {
 	explicit operator bool() const {
 		return kind != Kind::None;
 	}
+	/** Identity, ignoring the paste-remap data. */
+	std::tuple<int, int64_t, int> key() const {
+		return {int(kind), moduleId, index};
+	}
 
 	json_t* toJson() const;
 	static Target fromJson(json_t* rootJ);
@@ -30,6 +35,8 @@ app::ModuleWidget* widgetOf(int64_t moduleId);
 bool refresh(Target& t, app::ModuleWidget* owner);
 /** After a paste: rebinds to a module of the same model at the same offset from the pasted owner, if there is one. */
 bool remap(Target& t, app::ModuleWidget* owner);
+/** Whether the param's widget is a momentary button, which follows a gate instead of a level. */
+bool isMomentary(const Target& t);
 /** The light nearest `pos` (rack coordinates) within `radius`, skipping `owner`. */
 Target nearestLight(math::Vec pos, app::ModuleWidget* owner, float radius = 8.f);
 
