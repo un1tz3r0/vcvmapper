@@ -1,7 +1,7 @@
 {
   "slug": "Puppeteer",
   "name": "Puppeteer",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "license": "MIT",
   "brand": "un1tz3r0",
   "author": "Victor Michael Ondras-Condino",
@@ -20,8 +20,8 @@
       "tags": ["Utility", "Controller"]
     },
     {
-      "slug": "Strings",
-      "name": "Strings",
+      "slug": "Marionette",
+      "name": "Marionette",
       "description": "Eight channels that each bind a jack to knobs, switches, buttons or lights on other modules, edited from its screen.",
       "tags": ["Utility", "Controller", "Polyphonic"]
     }

@@ -6,4 +6,4 @@ using namespace rack;
 extern Plugin* pluginInstance;
 
 extern Model* modelPin;
-extern Model* modelStrings;
+extern Model* modelMarionette;

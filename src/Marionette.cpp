@@ -3,13 +3,13 @@
 #include "kit/Nvg.hpp"
 #include "kit/OledDisplay.hpp"
 #include "kit/PanelArt.hpp"
-#include "strings/Layout.hpp"
-#include "strings/View.hpp"
+#include "marionette/Layout.hpp"
+#include "marionette/View.hpp"
 
 using namespace puppeteer;
-using namespace strings;
+using namespace marionette;
 
-struct Strings : Module, BindingHost {
+struct Marionette : Module, BindingHost {
 	enum Learn { OFF, REPLACE, ADD };
 
 	Binding bindings[CHANNELS];
@@ -19,7 +19,7 @@ struct Strings : Module, BindingHost {
 	std::atomic<bool> editing{false};
 	dsp::BooleanTrigger learnTrigger, editTrigger;
 
-	Strings() {
+	Marionette() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
 		configButton(LEARN_PARAM, "Learn the selected channel");
 		configButton(EDIT_PARAM, "Edit the selected channel");
@@ -88,8 +88,8 @@ struct Strings : Module, BindingHost {
 };
 
 
-struct StringsScreen : kit::OledDisplay {
-	Strings* module = nullptr;
+struct MarionetteScreen : kit::OledDisplay {
+	Marionette* module = nullptr;
 	ViewState state;
 
 	static Row row(const Binding& b, int learning) {
@@ -114,7 +114,7 @@ struct StringsScreen : kit::OledDisplay {
 			r.label = b.selector.pattern.empty() ? "?" : b.selector.pattern;
 		r.note = PROBLEMS[int(problem)];
 		if (learning) {
-			r.note = learning == Strings::ADD ? "TOUCH ANOTHER TARGET" : "TOUCH A KNOB OR LIGHT";
+			r.note = learning == Marionette::ADD ? "TOUCH ANOTHER TARGET" : "TOUCH A KNOB OR LIGHT";
 			r.alert = true;
 		}
 		return r;
@@ -166,25 +166,25 @@ struct StringsScreen : kit::OledDisplay {
 };
 
 
-struct StringsWidget : ModuleWidget {
+struct MarionetteWidget : ModuleWidget {
 	static constexpr float CLICKS = 100.f; // per encoder turn
 	Learner learner;
 	float seen[2] = {NAN, NAN};
 
-	StringsWidget(Strings* module) {
+	MarionetteWidget(Marionette* module) {
 		setModule(module);
-		const kit::Panel panel = strings::panel();
+		const kit::Panel panel = marionette::panel();
 		kit::addPanel(this, panel);
 
 		const kit::Panel::Rect& glass = panel.screen;
-		auto* screen = createWidget<StringsScreen>(mm2px(Vec(glass.min.x, glass.min.y)));
+		auto* screen = createWidget<MarionetteScreen>(mm2px(Vec(glass.min.x, glass.min.y)));
 		screen->box.size = mm2px(Vec(glass.max.x - glass.min.x, glass.max.y - glass.min.y));
 		screen->module = module;
 		addChild(screen);
 	}
 
 	/** Whole clicks the encoder has turned since last asked. */
-	int clicks(Strings* m, int i) {
+	int clicks(Marionette* m, int i) {
 		float v = m->params[ITEM_PARAM + i].getValue();
 		// A jump is a reset or a preset, not a hand.
 		if (std::isnan(seen[i]) || std::fabs(v - seen[i]) > 0.5f)
@@ -196,7 +196,7 @@ struct StringsWidget : ModuleWidget {
 
 	void step() override {
 		ModuleWidget::step();
-		Strings* m = getModule<Strings>();
+		Marionette* m = getModule<Marionette>();
 		if (!m)
 			return;
 		NVGcolor color = kit::nvg(kit::Theme::accent(m->accent).field);
@@ -218,24 +218,24 @@ struct StringsWidget : ModuleWidget {
 
 		Target t;
 		if (learner.step(this, m->learning, t)) {
-			bool add = m->learning == Strings::ADD;
+			bool add = m->learning == Marionette::ADD;
 			learnInto(m->bindings[sel], m, sel, t, add);
 			// Like MIDI-Map: carry on down the channels while they are empty.
 			if (!add && sel + 1 < CHANNELS && m->bindings[sel + 1].selector.empty())
 				m->selected = sel + 1;
 			else
-				m->learning = Strings::OFF;
+				m->learning = Marionette::OFF;
 		}
 	}
 
 	void appendContextMenu(Menu* menu) override {
-		Strings* m = getModule<Strings>();
+		Marionette* m = getModule<Marionette>();
 		int sel = m->selected;
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel(string::f("Channel %d", sel + 1)));
 		appendBindingMenu(menu, m, sel, [=](bool add) {
 			m->selected = sel;
-			m->learning = add ? Strings::ADD : Strings::REPLACE;
+			m->learning = add ? Marionette::ADD : Marionette::REPLACE;
 		}, true);
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createIndexPtrSubmenuItem("Screen colour", std::vector<std::string>(std::begin(kit::Theme::ACCENTS), std::end(kit::Theme::ACCENTS)), &m->accent));
@@ -243,4 +243,4 @@ struct StringsWidget : ModuleWidget {
 };
 
 
-Model* modelStrings = createModel<Strings, StringsWidget>("Strings");
+Model* modelMarionette = createModel<Marionette, MarionetteWidget>("Marionette");

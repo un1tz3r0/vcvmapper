@@ -18,7 +18,7 @@ Several Pins can drive the same knob: their modulation adds up around the one ha
 
 **Shape** maps the CV onto part of the knob's travel, with a curve, inversion and steps. Params are written every 32 samples, or every sample while the CV runs at audio rate.
 
-**Strings** (14 HP) is eight Pins behind one screen. Each row of the screen is a channel, between its **IN** and **OUT** jacks: what it drives, a bar for the target's position with a mark at your hand's, and its mode.
+**Marionette** (14 HP) is eight Pins behind one screen. Each row of the screen is a channel, between its **IN** and **OUT** jacks: what it drives, a bar for the target's position with a mark at your hand's, and its mode.
 
 1. Click a row, or turn the left knob, to select a channel. The footer of the screen always says what the two knobs do.
 2. Press **LEARN** and touch a knob or light. Learning carries on down the channels while they are empty, so you can map several in one go; press **LEARN** again to stop.

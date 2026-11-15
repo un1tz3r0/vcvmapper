@@ -4,8 +4,8 @@
 #include "../kit/Painter.hpp"
 #include "Layout.hpp"
 
-// Strings' screen, independent of Rack so tools/mockup can draw it too.
-namespace strings {
+// Marionette's screen, independent of Rack so tools/mockup can draw it too.
+namespace marionette {
 
 struct Row {
 	std::string label; // what the channel drives; empty for an unbound channel
@@ -105,4 +105,4 @@ inline void paint(kit::Painter& p, const kit::Theme& t, const ViewState& s) {
 	p.label({p.width - PAD, y}, s.right, 7, t.probe, 1);
 }
 
-} // namespace strings
+} // namespace marionette

@@ -1,8 +1,8 @@
 #pragma once
 #include "../kit/Panel.hpp"
 
-// Strings' ids and panel, shared by the module and tools/mockup.
-namespace strings {
+// Marionette's ids and panel, shared by the module and tools/mockup.
+namespace marionette {
 
 constexpr int CHANNELS = 8;
 
@@ -24,7 +24,7 @@ inline float rowY(int i) {
 
 inline kit::Panel panel() {
 	kit::Panel p{WIDTH, 128.5f, GLASS};
-	p.text({WIDTH / 2, 8.4f}, "strings", kit::Panel::TITLE);
+	p.text({WIDTH / 2, 8.4f}, "marionette", kit::Panel::TITLE);
 	p.text({WIDTH / 2, 122.6f}, "un1tz3r0", kit::Panel::BRAND);
 	p.text({IN_X, 11.4f}, "IN");
 	p.text({OUT_X, 11.4f}, "OUT");
@@ -49,4 +49,4 @@ inline kit::Panel panel() {
 	return p;
 }
 
-} // namespace strings
+} // namespace marionette

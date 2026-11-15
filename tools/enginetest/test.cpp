@@ -3,7 +3,7 @@
 #include "../../src/plugin.hpp"
 #include "core/Binding.hpp"
 #include "pin/Layout.hpp"
-#include "strings/Layout.hpp"
+#include "marionette/Layout.hpp"
 #include <cstdio>
 
 using namespace puppeteer;
@@ -257,15 +257,15 @@ static void bypassAndPresets() {
 	remove(p); remove(d);
 }
 
-static void strings8() {
-	using namespace strings;
+static void marionette8() {
+	using namespace marionette;
 	Dummy* d = dummy(11);
 	Dummy* e = dummy(12);
 	json_t* bindingsJ = json_array();
 	json_array_append_new(bindingsJ, bindingJ({param(d, 0)}));
 	json_array_append_new(bindingsJ, bindingJ({param(d, 0)}, "modulate", -0.5)); // a second say in the same knob
 	json_array_append_new(bindingsJ, bindingJ({param(d, 1), param(e, 1)}, "overwrite"));
-	Module* s = add(modelStrings, 100, json_pack("{s:i, s:o}", "selected", 2, "bindings", bindingsJ));
+	Module* s = add(modelMarionette, 100, json_pack("{s:i, s:o}", "selected", 2, "bindings", bindingsJ));
 	cv(s, {2.f}, CV_INPUT + 0);
 	cv(s, {2.f}, CV_INPUT + 1);
 	cv(s, {-5.f, 5.f}, CV_INPUT + 2);
@@ -284,8 +284,8 @@ static void strings8() {
 
 	json_t* saved = s->dataToJson();
 	remove(s); run();
-	CHECK(near(scaled(d, 0), 0.5f), "deleting Strings hands the knobs back, got %f", scaled(d, 0));
-	s = add(modelStrings, 101, saved);
+	CHECK(near(scaled(d, 0), 0.5f), "deleting Marionette hands the knobs back, got %f", scaled(d, 0));
+	s = add(modelMarionette, 101, saved);
 	cv(s, {2.f}, CV_INPUT + 0);
 	run();
 	CHECK(near(scaled(d, 0), 0.6f) && binding(s, 0).settings.depth == 0.5f, "channels and their settings reload, got %f", scaled(d, 0));
@@ -322,7 +322,7 @@ int main() {
 	buttons();
 	saveAndLoad();
 	bypassAndPresets();
-	strings8();
+	marionette8();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;
