@@ -12,6 +12,10 @@ namespace puppeteer {
 /** How a binding's CV and a hand on the same knob get along. */
 enum class Mode { Modulate, Overwrite, PickUp };
 
+/** Where a learned target's twins are also driven: the same control on the same model at the same place in the
+other groups of its row, of the rack, or on other rows above and below it. */
+enum class Twins { None, Row, Column, All };
+
 struct Settings {
 	Mode mode = Mode::Modulate;
 	Shape shape;
@@ -20,6 +24,8 @@ struct Settings {
 	int interval = 32;    // frames between param writes
 	bool autoRate = true; // write every frame while the CV runs at audio rate
 	float hold = 1.f;     // ms a button stays down, however short the gate
+	Twins twins = Twins::None;
+	float spread = 0.f;   // -1..1 of the knob's travel, fanned across the targets from first to last
 
 	json_t* toJson() const;
 	void fromJson(json_t* rootJ);
@@ -57,6 +63,7 @@ constexpr int INTERVALS[] = {1, 4, 8, 16, 32, 64, 128};
 constexpr float SLEWS[] = {0, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000};
 constexpr float HOLDS[] = {0, 0.5f, 1, 2, 5, 10, 20, 50};
 constexpr const char* MODES[] = {"MODULATE", "OVERWRITE", "PICK UP"};
+constexpr const char* TWINS[] = {"OFF", "ROW", "COLUMN", "RACK"};
 
 inline const Field ALL[] = {
 	{"DEPTH", [](const Settings& s) { return text("%.0f%%", s.depth * 100); },
@@ -81,6 +88,10 @@ inline const Field ALL[] = {
 		[](Settings& s, int n) { s.autoRate = n > 0; }},
 	{"WRITE EVERY", [](const Settings& s) { return std::to_string(s.interval); },
 		[](Settings& s, int n) { s.interval = pick(INTERVALS, s.interval, n); }},
+	{"TWINS", [](const Settings& s) { return std::string(TWINS[int(s.twins)]); },
+		[](Settings& s, int n) { s.twins = Twins(std::clamp(int(s.twins) + n, 0, 3)); }},
+	{"SPREAD", [](const Settings& s) { return text("%+.0f%%", s.spread * 100); },
+		[](Settings& s, int n) { s.spread = nudge(s.spread, n, 0.01f, -1, 1); }},
 	{"BUTTON HOLD", [](const Settings& s) { return text("%g ms", s.hold); },
 		[](Settings& s, int n) { s.hold = pick(HOLDS, s.hold, n); }},
 };

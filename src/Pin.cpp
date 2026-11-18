@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "core/BindingUi.hpp"
+#include "core/Overlay.hpp"
 #include "kit/Nvg.hpp"
 #include "kit/OledDisplay.hpp"
 #include "kit/PanelArt.hpp"
@@ -126,13 +127,15 @@ struct PinScreen : kit::OledDisplay {
 		else if (b->selector.empty())
 			s.message = {"PRESS", "LEARN"};
 		else if (!b->error.empty())
-			s.message = {"BAD", "PATTERN"};
+			s.message = {"BAD", "PATH"};
 		else if (!l)
 			s.message = {"NO", "MATCH"};
 		else if (info.module.empty())
 			s.message = {"TARGET", "MISSING"};
 		else if (l->lease && !l->lease.slot->bound)
 			s.message = {"IN USE", "BY OTHER", "MAPPER"};
+		else if (int was = b->shifted(); was >= 0)
+			s.message = {string::f("WAS %d", was), string::f("NOW %d", b->plan()->count), "TARGETS"}, s.alert = true;
 		if (!s.message.empty())
 			return s;
 
@@ -164,6 +167,7 @@ struct PinScreen : kit::OledDisplay {
 
 struct PinWidget : ModuleWidget {
 	Learner learner;
+	MenuWatch menu;
 
 	PinWidget(Pin* module) {
 		setModule(module);
@@ -184,6 +188,8 @@ struct PinWidget : ModuleWidget {
 			return;
 		m->binding.color = kit::nvg(kit::Theme::accent(m->accent).field);
 		m->binding.update(this);
+		if (menu.open())
+			Overlay::show(m->binding);
 
 		Target t;
 		if (learner.step(this, m->learning, t)) {
@@ -194,6 +200,7 @@ struct PinWidget : ModuleWidget {
 
 	void appendContextMenu(Menu* menu) override {
 		Pin* m = getModule<Pin>();
+		this->menu.opened(menu);
 		menu->addChild(new MenuSeparator);
 		appendBindingMenu(menu, m, 0, [=](bool add) { m->learning = add ? Pin::ADD : Pin::REPLACE; }, false);
 		menu->addChild(createIndexPtrSubmenuItem("Screen colour", std::vector<std::string>(std::begin(kit::Theme::ACCENTS), std::end(kit::Theme::ACCENTS)), &m->accent));

@@ -1,16 +1,17 @@
 #include "Binding.hpp"
-#include "Pattern.hpp"
+#include "Resolve.hpp"
 #include <algorithm>
 
 namespace puppeteer {
 
 static const char* MODES[] = {"modulate", "overwrite", "pickup"};
+static const char* TWINS[] = {"none", "row", "column", "all"};
 
 json_t* Settings::toJson() const {
-	return json_pack("{s:s, s:f, s:b, s:f, s:f, s:f, s:b, s:i, s:f, s:i, s:b, s:f}",
+	return json_pack("{s:s, s:f, s:b, s:f, s:f, s:f, s:b, s:i, s:f, s:i, s:b, s:f, s:s, s:f}",
 		"mode", MODES[int(mode)], "depth", depth, "bipolar", shape.bipolar, "lo", shape.lo, "hi", shape.hi, "curve", shape.curve,
 		"invert", shape.invert, "steps", shape.steps, "slew", slew, "interval", interval, "autoRate", autoRate,
-		"hold", hold);
+		"hold", hold, "twins", TWINS[int(twins)], "spread", spread);
 }
 
 void Settings::fromJson(json_t* rootJ) {
@@ -27,6 +28,11 @@ void Settings::fromJson(json_t* rootJ) {
 		for (int i = 0; i < 3; i++)
 			if (std::string(m) == MODES[i])
 				mode = Mode(i);
+	if (const char* t = json_string_value(json_object_get(rootJ, "twins")))
+		for (int i = 0; i < 4; i++)
+			if (std::string(t) == TWINS[i])
+				twins = Twins(i);
+	number("spread", spread, -1, 1);
 	number("depth", depth, -1, 1);
 	flag("bipolar", shape.bipolar);
 	number("lo", shape.lo, 0, 1);
@@ -130,20 +136,21 @@ Plan* Binding::swap(int64_t frame) {
 void Binding::process(const Module::ProcessArgs& args, Input& in, Output& out, float depth) {
 	Plan* p = swap(args.frame);
 	int n = p ? p->count : 0;
-	out.setChannels(std::max(n, 1));
+	out.setChannels(clamp(n, 1, PORT_MAX_CHANNELS));
 	if (!n) {
 		out.setVoltage(0.f);
 		return;
 	}
-	bool connected = in.isConnected();
+	int channels = in.getChannels();
 	int64_t block = APP->engine->getBlock();
 	for (int i = 0; i < n; i++) {
 		Lane& l = p->lanes[i];
 		float x = l.read(block);
 		l.position.store(x, std::memory_order_relaxed);
-		out.setVoltage(std::isnan(x) ? 0.f : l.target.kind == Kind::Light ? 10.f * x : p->settings.shape.reverse(x), i);
+		if (i < PORT_MAX_CHANNELS)
+			out.setVoltage(std::isnan(x) ? 0.f : l.target.kind == Kind::Light ? 10.f * x : p->settings.shape.reverse(x), i);
 		if (l.lease)
-			drive(l, *p, connected ? in.getPolyVoltage(i) : NAN, depth, args);
+			drive(l, *p, channels ? in.getVoltage(i % channels) : NAN, depth, args);
 	}
 }
 
@@ -184,7 +191,7 @@ void Binding::drive(Lane& l, const Plan& p, float volts, float depth, const Modu
 	else {
 		float x = l.lag.process(s.shape.forward(volts), s.slew, args.sampleTime);
 		float y = p.rest + depth * s.depth * (x - p.rest);
-		float value = s.mode == Mode::Modulate ? y - p.rest : y;
+		float value = (s.mode == Mode::Modulate ? y - p.rest : y) + l.offset;
 		if (value != l.sent) {
 			l.sent = value;
 			c.stamp.store(args.frame, std::memory_order_relaxed);
@@ -213,6 +220,16 @@ Binding::Problem Binding::problem() const {
 	return l.lease && !l.lease.slot->bound ? Problem::InUse : Problem::None;
 }
 
+void Binding::acknowledge() {
+	const Plan* p = plan();
+	known = p ? p->count : -1;
+}
+
+int Binding::shifted() const {
+	const Plan* p = plan();
+	return p && known >= 0 && p->count != known ? known : -1;
+}
+
 void Binding::collect() {
 	if (!posting || next.load(std::memory_order_acquire))
 		return;
@@ -224,51 +241,29 @@ void Binding::collect() {
 	posting = false;
 }
 
-static bool matchModule(const Clause& c, plugin::Model* model) {
-	plugin::Plugin* p = model->plugin;
-	return (glob(c.plugin, p->slug) || glob(c.plugin, p->name) || glob(c.plugin, p->brand))
-		&& (glob(c.model, model->slug) || glob(c.model, model->name));
-}
-
 std::vector<std::pair<Target, bool>> Binding::resolve(app::ModuleWidget* owner) {
 	std::vector<std::pair<Target, bool>> out;
 	auto add = [&](const Target& t) {
 		auto same = [&](const Target& u) { return u.key() == t.key(); };
-		if (out.size() < PORT_MAX_CHANNELS && std::none_of(out.begin(), out.end(), [&](auto& r) { return same(r.first); })
+		if (out.size() < MAX_LANES && std::none_of(out.begin(), out.end(), [&](auto& r) { return same(r.first); })
 			&& std::none_of(selector.excluded.begin(), selector.excluded.end(), same))
 			out.push_back({t, isMomentary(t)});
 	};
-	for (const Target& t : selector.targets)
-		add(t);
-
 	std::vector<Clause> clauses = Clause::parseAll(selector.pattern, error);
-	if (!owner || clauses.empty())
+	// Twins and patterns need the rack's widgets, which a loading patch doesn't have yet: they follow on the first
+	// update. Plain learned targets skip the rack altogether.
+	if (!owner || (settings.twins == Twins::None && clauses.empty())) {
+		for (const Target& t : selector.targets)
+			add(t);
 		return out;
-	std::vector<app::ModuleWidget*> modules = APP->scene->rack->getModules();
-	auto row = [](app::ModuleWidget* mw) { return std::round(mw->box.pos.y / RACK_GRID_HEIGHT); };
-	std::sort(modules.begin(), modules.end(), [&](app::ModuleWidget* a, app::ModuleWidget* b) {
-		return row(a) != row(b) ? row(a) < row(b) : a->box.pos.x < b->box.pos.x;
-	});
-	for (const Clause& c : clauses) {
-		for (app::ModuleWidget* mw : modules) {
-			Module* m = mw->module;
-			if (mw == owner || !m || !matchModule(c, mw->model))
-				continue;
-			Target t;
-			t.kind = c.light ? Kind::Light : Kind::Param;
-			t.moduleId = m->id;
-			int count = c.light ? (int) m->lights.size() : (int) m->paramQuantities.size();
-			for (t.index = 0; t.index < count; t.index++) {
-				std::string name;
-				if (c.light)
-					name = t.index < (int) m->lightInfos.size() && m->lightInfos[t.index] ? m->lightInfos[t.index]->name : "";
-				else
-					name = m->paramQuantities[t.index]->name;
-				if (c.first >= 0 ? c.matchesId(t.index) : !name.empty() && glob(c.name, name))
-					add(t);
-			}
-		}
 	}
+	Snapshot snapshot = Snapshot::take(owner);
+	for (const Target& t : selector.targets)
+		for (const Target& u : twins(t, settings.twins, snapshot))
+			add(u);
+	for (const Clause& c : clauses)
+		for (const Target& t : match(c, snapshot))
+			add(t);
 	return out;
 }
 
@@ -277,8 +272,11 @@ Plan* Binding::build(const std::vector<std::pair<Target, bool>>& resolved) {
 	p->settings = settings;
 	p->rest = settings.shape.forward(0.f);
 	std::map<Key, Lease> kept;
+	int n = (int) resolved.size();
 	for (const auto& r : resolved) {
-		Lane& l = p->lanes[p->count++];
+		Lane& l = p->lanes[p->count];
+		l.offset = n > 1 && !r.second ? settings.spread * (float(p->count) / (n - 1) - 0.5f) : 0.f;
+		p->count++;
 		l.target = r.first;
 		l.momentary = r.second;
 		if (!writes || l.target.kind != Kind::Param)
@@ -333,7 +331,7 @@ void Binding::update(app::ModuleWidget* owner) {
 			ts.erase(learned);
 		else if (std::none_of(selector.excluded.begin(), selector.excluded.end(), [&](const Target& u) { return u.key() == t.key(); }))
 			selector.excluded.push_back(t);
-		dirty = true;
+		changed();
 	}
 
 	if (posting || (!dirty && ++frame % 30))
@@ -349,6 +347,8 @@ void Binding::update(app::ModuleWidget* owner) {
 	if (same && !dirty)
 		return;
 	dirty = false;
+	if (known < 0)
+		known = (int) resolved.size();
 	next.store(build(resolved), std::memory_order_release);
 	posting = true;
 	seeds.clear(); // they were for the patch as loaded
@@ -403,12 +403,16 @@ json_t* Binding::toJson() const {
 			json_array_append_new(basesJ, json_pack("[I, i, f]", (json_int_t) std::get<1>(entry.first), std::get<2>(entry.first), b));
 	}
 	json_object_set_new(rootJ, "bases", basesJ);
+	const Plan* p = plan();
+	json_object_set_new(rootJ, "known", json_integer(known >= 0 ? known : p ? p->count : 0));
 	return rootJ;
 }
 
 void Binding::fromJson(json_t* rootJ, Module* module) {
 	settings.fromJson(json_object_get(rootJ, "settings"));
 	selector = Selector::fromJson(json_object_get(rootJ, "selector"));
+	json_t* knownJ = json_object_get(rootJ, "known");
+	known = knownJ ? (int) json_integer_value(knownJ) : -1;
 	seeds.clear();
 	size_t i;
 	json_t* baseJ;

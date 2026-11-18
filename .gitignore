@@ -5,6 +5,7 @@
 /plugin.dll
 .DS_Store
 /tools/mockup
+/tools/coretest
 /tools/*.svg
 /tools/enginetest/build
 /tools/enginetest/test

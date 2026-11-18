@@ -294,6 +294,32 @@ static void marionette8() {
 	remove(s); remove(d); remove(e);
 }
 
+static void wideAndSpread() {
+	std::vector<Dummy*> ds;
+	std::vector<Target> ts;
+	for (int i = 0; i < 10; i++) {
+		ds.push_back(dummy(100 + i));
+		ts.push_back(param(ds.back(), 0));
+		ts.push_back(param(ds.back(), 1));
+	}
+	Module* p = makePin(60, bindingJ(ts, "overwrite"));
+	cv(p, {0.f, 5.f}); run();
+	CHECK(binding(p).plan()->count == 20, "more targets than poly channels, got %d", binding(p).plan()->count);
+	CHECK(near(scaled(ds[8], 0), 0.5f) && near(scaled(ds[8], 1), 1.f) && near(scaled(ds[9], 1), 1.f),
+		"lanes past the channels wrap round them, got %f %f", scaled(ds[8], 0), scaled(ds[8], 1));
+	CHECK(p->outputs[pin::CV_OUTPUT].getChannels() == 16, "the output reads back the first 16");
+	remove(p);
+
+	json_t* bJ = bindingJ({param(ds[0], 0), param(ds[1], 0), param(ds[2], 0)}, "overwrite");
+	json_object_set_new(json_object_get(bJ, "settings"), "spread", json_real(0.4));
+	p = makePin(61, bJ);
+	cv(p, {0.f}); run();
+	CHECK(near(scaled(ds[0], 0), 0.3f) && near(scaled(ds[1], 0), 0.5f) && near(scaled(ds[2], 0), 0.7f),
+		"spread fans the targets out, got %f %f %f", scaled(ds[0], 0), scaled(ds[1], 0), scaled(ds[2], 0));
+	remove(p);
+	for (Dummy* d : ds) remove(d);
+}
+
 static void fieldsRoundTrip() {
 	Settings s;
 	for (const Field& f : fields::ALL) {
@@ -323,6 +349,7 @@ int main() {
 	saveAndLoad();
 	bypassAndPresets();
 	marionette8();
+	wideAndSpread();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;

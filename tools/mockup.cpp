@@ -49,16 +49,20 @@ static void marionetteMockup(const std::string& path, bool dark, int accent, boo
 	s.rows[4] = {"ADSR Gate", "LIGHT", "", false, 0.9f, NAN};
 	s.rows[5] = {"", "", "TOUCH A KNOB OR LIGHT", true, NAN, NAN};
 	s.rows[6] = {"Mixer Level 1", "SET", "IN USE BY OTHER MAPPER", false, NAN, NAN};
+	s.rows[7] = {"VCA Level", "MOD x4", "WAS 4 TARGETS, NOW 3", true, NAN, NAN};
 	s.selected = editing ? 0 : 5;
 	s.editing = editing;
 	puppeteer::Settings settings;
 	if (editing) {
-		s.cursor = 5;
+		s.cursor = 6;
 		settings.shape.curve = 0.35f;
+		settings.twins = puppeteer::Twins::Row;
+		settings.spread = 0.12f;
+		s.items.push_back({"PATH", "VCO@row:Freq*"});
 		for (const puppeteer::Field& f : puppeteer::fields::ALL)
 			s.items.push_back({f.name, f.show(settings)});
-		s.left = puppeteer::fields::ALL[s.cursor].name;
-		s.right = puppeteer::fields::ALL[s.cursor].show(settings);
+		s.left = s.items[s.cursor].first;
+		s.right = s.items[s.cursor].second;
 	}
 	else {
 		s.left = "CH 6";
