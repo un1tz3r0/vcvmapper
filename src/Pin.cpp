@@ -1,6 +1,5 @@
 #include "plugin.hpp"
-#include "core/Binding.hpp"
-#include "kit/Menus.hpp"
+#include "core/BindingUi.hpp"
 #include "kit/Nvg.hpp"
 #include "kit/OledDisplay.hpp"
 #include "kit/PanelArt.hpp"
@@ -164,9 +163,7 @@ struct PinScreen : kit::OledDisplay {
 
 
 struct PinWidget : ModuleWidget {
-	bool wasLearning = false;
-	bool mouseWas = false;
-	Target candidate;
+	Learner learner;
 
 	PinWidget(Pin* module) {
 		setModule(module);
@@ -188,163 +185,17 @@ struct PinWidget : ModuleWidget {
 		m->binding.color = kit::nvg(kit::Theme::accent(m->accent).field);
 		m->binding.update(this);
 
-		bool learning = m->learning;
-		if (learning && !wasLearning) {
-			APP->scene->rack->setTouchedParam(NULL);
-			// The click that pressed LEARN must not count as the click on a light.
-			mouseWas = true;
+		Target t;
+		if (learner.step(this, m->learning, t)) {
+			learnInto(m->binding, m, 0, t, m->learning == Pin::ADD);
+			m->learning = Pin::OFF;
 		}
-		wasLearning = learning;
-		if (learning)
-			learn(m);
-	}
-
-	/** A touched knob or switch wins; otherwise a click near a light binds that light. */
-	void learn(Pin* m) {
-		app::ParamWidget* pw = APP->scene->rack->getTouchedParam();
-		if (pw && pw->module && pw->module != m) {
-			APP->scene->rack->setTouchedParam(NULL);
-			Target t;
-			t.kind = Kind::Param;
-			t.moduleId = pw->module->id;
-			t.index = pw->paramId;
-			finish(m, t);
-			return;
-		}
-		bool down = glfwGetMouseButton(APP->window->win, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS;
-		if (down && !mouseWas)
-			candidate = nearestLight(APP->scene->rack->getMousePos(), this);
-		if (!down && mouseWas && candidate)
-			finish(m, candidate);
-		mouseWas = down;
-	}
-
-	void finish(Pin* m, Target t) {
-		refresh(t, this);
-		bool add = m->learning == Pin::ADD;
-		m->binding.edit(m, 0, add ? "learn another Pin target" : "learn Pin target", [&](Selector& s) {
-			if (!add)
-				s = Selector();
-			if (std::none_of(s.targets.begin(), s.targets.end(), [&](const Target& u) { return u.key() == t.key(); }))
-				s.targets.push_back(t);
-		}, t);
-		m->learning = Pin::OFF;
-		candidate = {};
-	}
-
-	static std::string label(const Target& t) {
-		TargetInfo info = describe(t, 0.f);
-		return info.module.empty() ? "Missing module" : info.module + ": " + info.name;
-	}
-
-	/** The clause that matches this target on every module of its model. */
-	static std::string everyInstance(const Target& t) {
-		return t.plugin + "/" + t.model + ":" + (t.kind == Kind::Light ? "light:#" : "#") + std::to_string(t.index);
-	}
-
-	void appendTargets(Menu* menu, Pin* m) {
-		Binding& b = m->binding;
-		const Plan* p = b.plan();
-		for (int i = 0; p && i < p->count; i++) {
-			Target t = p->lanes[i].target;
-			bool learned = std::any_of(b.selector.targets.begin(), b.selector.targets.end(), [&](const Target& u) { return u.key() == t.key(); });
-			menu->addChild(createSubmenuItem(string::f("%d. %s", i + 1, label(t).c_str()), "", [=](Menu* sub) {
-				auto without = [=](Selector& s) {
-					s.targets.erase(std::remove_if(s.targets.begin(), s.targets.end(), [&](const Target& u) { return u.key() == t.key(); }), s.targets.end());
-				};
-				if (!learned) {
-					sub->addChild(createMenuItem("Leave out", "", [=] {
-						m->binding.edit(m, 0, "leave out Pin target", [&](Selector& s) { s.excluded.push_back(t); });
-					}));
-					return;
-				}
-				sub->addChild(createMenuItem("Remove", "", [=] { m->binding.edit(m, 0, "remove Pin target", without); }));
-				std::string model = describe(t, 0.f).module;
-				if (!model.empty())
-					sub->addChild(createMenuItem("On every " + model, "", [=] {
-						m->binding.edit(m, 0, "widen Pin target", [&](Selector& s) {
-							without(s);
-							s.pattern += (s.pattern.empty() ? "" : ", ") + everyInstance(t);
-						});
-					}));
-			}));
-		}
-		if (!b.selector.excluded.empty())
-			menu->addChild(createMenuItem(string::f("Bring back %d left out", (int) b.selector.excluded.size()), "", [=] {
-				m->binding.edit(m, 0, "bring back Pin targets", [](Selector& s) { s.excluded.clear(); });
-			}));
-	}
-
-	void appendPattern(Menu* menu, Pin* m) {
-		auto* entry = new kit::TextEntry;
-		entry->text = m->binding.selector.pattern;
-		entry->placeholder = "Fundamental/VCO:Freq*";
-		entry->commit = [=](const std::string& text) {
-			m->binding.edit(m, 0, "edit Pin pattern", [&](Selector& s) { s.pattern = text; });
-		};
-		menu->addChild(entry);
-		menu->addChild(createMenuLabel("plugin/model:param, comma between several"));
-		menu->addChild(createMenuLabel("* and ? match any text; #3 or #0-7 are ids"));
-		menu->addChild(createMenuLabel("light:name or light:#N reads lights"));
-		if (!m->binding.error.empty())
-			menu->addChild(createMenuLabel(m->binding.error));
-	}
-
-	void appendShape(Menu* menu, Pin* m) {
-		Shape* sh = &m->binding.settings.shape;
-		auto set = [=](auto apply) { return [=](float v) { apply(v); m->binding.changed(); }; };
-		menu->addChild(createBoolMenuItem("Invert", "", [=] { return sh->invert; }, [=](bool v) { sh->invert = v; m->binding.changed(); }));
-		menu->addChild(kit::createSlider("Curve", "", -1.f, 1.f, 0.f, 2, [=] { return sh->curve; }, set([=](float v) { sh->curve = v; })));
-		menu->addChild(kit::createSlider("Knob from", "%", 0.f, 100.f, 0.f, 0, [=] { return sh->lo * 100.f; }, set([=](float v) { sh->lo = v / 100.f; })));
-		menu->addChild(kit::createSlider("Knob to", "%", 0.f, 100.f, 100.f, 0, [=] { return sh->hi * 100.f; }, set([=](float v) { sh->hi = v / 100.f; })));
-		std::vector<int> steps = {0, 2, 3, 4, 5, 6, 8, 12, 16, 24, 32};
-		menu->addChild(createSubmenuItem("Steps", sh->steps ? std::to_string(sh->steps) : "Off", [=](Menu* sub) {
-			for (int n : steps)
-				sub->addChild(createCheckMenuItem(n ? std::to_string(n) : "Off", "", [=] { return sh->steps == n; }, [=] { sh->steps = n; m->binding.changed(); }));
-		}));
-	}
-
-	void appendTiming(Menu* menu, Pin* m) {
-		Settings* s = &m->binding.settings;
-		menu->addChild(kit::createSlider("Slew", " ms", 0.f, 2000.f, 0.f, 1, [=] { return s->slew; }, [=](float v) { s->slew = v; m->binding.changed(); }, 3.f));
-		menu->addChild(createSubmenuItem("Write rate", s->autoRate ? "Auto" : "", [=](Menu* sub) {
-			sub->addChild(createBoolMenuItem("Every sample for audio-rate CV", "", [=] { return s->autoRate; }, [=](bool v) { s->autoRate = v; m->binding.changed(); }));
-			sub->addChild(new MenuSeparator);
-			for (int n : {1, 4, 8, 16, 32, 64, 128})
-				sub->addChild(createCheckMenuItem(n == 1 ? "Every sample" : string::f("Every %d samples", n), "", [=] { return s->interval == n; }, [=] { s->interval = n; m->binding.changed(); }));
-		}));
-		menu->addChild(createSubmenuItem("Button hold", string::f("%g ms", s->hold), [=](Menu* sub) {
-			for (float ms : {0.f, 0.5f, 1.f, 2.f, 5.f, 10.f, 20.f, 50.f})
-				sub->addChild(createCheckMenuItem(string::f("%g ms", ms), "", [=] { return s->hold == ms; }, [=] { s->hold = ms; m->binding.changed(); }));
-		}));
 	}
 
 	void appendContextMenu(Menu* menu) override {
 		Pin* m = getModule<Pin>();
-		Binding& b = m->binding;
-		Settings* s = &b.settings;
-		const Plan* p = b.plan();
-		int count = p ? p->count : 0;
-
 		menu->addChild(new MenuSeparator);
-		menu->addChild(createMenuLabel(count == 0 ? "Not bound" : count == 1 ? label(p->lanes[0].target) : string::f("%d targets", count)));
-		menu->addChild(createMenuItem("Learn", "", [=] { m->learning = Pin::REPLACE; }));
-		menu->addChild(createMenuItem("Learn another", "", [=] { m->learning = Pin::ADD; }, b.selector.empty()));
-		menu->addChild(createSubmenuItem("Targets", std::to_string(count), [=](Menu* sub) { appendTargets(sub, m); }));
-		menu->addChild(createSubmenuItem("Pattern", b.selector.pattern.empty() ? "" : "On", [=](Menu* sub) { appendPattern(sub, m); }));
-		menu->addChild(createMenuItem("Unbind all", "", [=] {
-			m->binding.edit(m, 0, "unbind Pin", [](Selector& s) { s = Selector(); });
-		}, b.selector.empty()));
-
-		menu->addChild(new MenuSeparator);
-		menu->addChild(createIndexSubmenuItem("Hand and CV", {"Modulate around the knob", "Overwrite the knob", "Pick up the knob"},
-			[=] { return (size_t) s->mode; },
-			[=](size_t i) { s->mode = Mode(i); m->binding.changed(); }));
-		menu->addChild(createIndexSubmenuItem("CV range", {"-5 V to +5 V", "0 V to 10 V"},
-			[=] { return s->shape.bipolar ? 0 : 1; },
-			[=](size_t i) { s->shape.bipolar = i == 0; m->binding.changed(); }));
-		menu->addChild(createSubmenuItem("Shape", "", [=](Menu* sub) { appendShape(sub, m); }));
-		appendTiming(menu, m);
+		appendBindingMenu(menu, m, 0, [=](bool add) { m->learning = add ? Pin::ADD : Pin::REPLACE; }, false);
 		menu->addChild(createIndexPtrSubmenuItem("Screen colour", std::vector<std::string>(std::begin(kit::Theme::ACCENTS), std::end(kit::Theme::ACCENTS)), &m->accent));
 	}
 };
