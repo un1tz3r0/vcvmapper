@@ -9,8 +9,10 @@
 
 namespace puppeteer {
 
-/** What a binding points at: learned targets in learn order, then whatever the pattern matches from left to
-right and top to bottom, minus the targets someone unmapped from the knob. At most 16, one per poly channel. */
+constexpr int MAX_LANES = 64;
+
+/** What a binding points at: learned targets in learn order, each with its twins, then whatever the pattern matches
+from left to right and top to bottom, minus the targets someone unmapped from the knob. At most MAX_LANES. */
 struct Selector {
 	std::vector<Target> targets;
 	std::string pattern;
@@ -23,10 +25,12 @@ struct Selector {
 	static Selector fromJson(json_t* rootJ);
 };
 
-/** One resolved target. The binding's channel i drives and reads lane i. */
+/** One resolved target. Lane i follows input channel i, wrapping round the channels there are, and the first 16
+lanes read back on the output's channels. */
 struct Lane {
 	Target target;
 	bool momentary = false;
+	float offset = 0.f; // this lane's share of the spread
 	Lease lease; // writers only; borrowed from the binding, which owns every lease
 
 	// Audio thread
@@ -50,11 +54,11 @@ struct Plan {
 	Settings settings;
 	float rest = 0.f; // where 0 V puts the knob
 	int count = 0;
-	Lane lanes[PORT_MAX_CHANNELS];
+	Lane lanes[MAX_LANES];
 };
 
 struct Binding {
-	// UI thread. Call changed() after editing either.
+	// UI thread. Call changed() after editing either; it also takes whatever the edit matches as known.
 	Settings settings;
 	Selector selector;
 	bool writes = true; // claims params; off for a binding that only reads them
@@ -66,6 +70,10 @@ struct Binding {
 	/** Why the binding isn't driving anything, for screens to word as they like. */
 	enum class Problem { None, Empty, BadPattern, NoMatch, Missing, InUse };
 	Problem problem() const;
+	/** How many targets the binding had when last edited or loaded, when that differs from now; else -1. Moving
+	modules can change what a scope or twins match, so screens flag it until acknowledge() or an edit. */
+	int shifted() const;
+	void acknowledge();
 
 	// Audio thread
 	void process(const Module::ProcessArgs& args, Input& in, Output& out, float depth = 1.f);
@@ -75,6 +83,7 @@ struct Binding {
 	void update(app::ModuleWidget* owner);
 	void changed() {
 		dirty = true;
+		known = -1;
 	}
 	/** Selector edits through here get undo. `retake` re-claims a param that was unmapped from under us. */
 	void edit(Module* module, int index, const std::string& name, const std::function<void(Selector&)>& f, const Target& retake = {});
@@ -92,6 +101,7 @@ private:
 	Plan* retired = nullptr; // set by the audio thread before it clears `next`
 	bool posting = false, dirty = true, pasted = false;
 	int frame = 0;
+	int known = -1; // the target count the user has seen, -1 to take the next one
 	std::map<Key, Lease> leases;
 	std::vector<Lease> doomed; // released once the plan that still mentions them is retired
 	std::set<Key> retakes;

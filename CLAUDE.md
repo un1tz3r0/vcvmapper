@@ -29,7 +29,8 @@ The leading 2 never changes. Rack 2 refuses to load a plugin whose version doesn
   so `tools/` can build them without the SDK.
 - `src/<module>/Layout.hpp` and `View.hpp`: a module's ids, panel and screen painting, pure for the same reason.
 - `src/core/`: the binding core every module is a thin view over: targets, slots shared per param, plans, settings
-  and their screen-editable fields, learn and the context menu. `Pattern.hpp`, `Shape.hpp` and `Settings.hpp` are pure.
+  and their screen-editable fields, learn and the context menu. `Pattern.hpp`, `Groups.hpp`, `Shape.hpp` and `Settings.hpp`
+  are pure, and `make -C tools coretest && tools/coretest` checks the first two.
 - `tools/mockup`: `make -C tools`, then `cd tools && ./mockup [rack-dir]` writes light and dark SVGs of every panel for
   checking a layout without running Rack. With a Rack source or SDK directory it draws Rack's real jacks, screws and label font.
 - `tools/enginetest`: `make RACK_SRC=/path/to/Rack && ./test` runs the modules headless against Rack's real engine

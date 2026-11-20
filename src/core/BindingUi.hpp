@@ -19,7 +19,22 @@ void learnInto(Binding& b, Module* module, int index, Target t, bool add);
 /** "VCO: Frequency", "3 targets" or "Not bound". */
 std::string summary(const Binding& b);
 
-/** Targets, pattern and settings for binding `index` of `module`. `learn(add)` starts the module's learn mode. */
+/** Targets, path and settings for binding `index` of `module`. `learn(add)` starts the module's learn mode. */
 void appendBindingMenu(ui::Menu* menu, Module* module, int index, std::function<void(bool add)> learn, bool depth);
+
+/** The path editor: the whole pattern as text, then each clause as menus of what the rack holds now. */
+void appendPathMenu(ui::Menu* menu, Module* module, int index);
+
+/** Whether a context menu a widget opened is still up, so it can show the overlay while the menu is in use. */
+struct MenuWatch {
+	WeakPtr<ui::Menu> menu;
+
+	void opened(ui::Menu* m) {
+		menu = m;
+	}
+	bool open() const {
+		return menu.get();
+	}
+};
 
 } // namespace puppeteer

@@ -12,15 +12,15 @@ The original plan, with the reasoning behind it, is the "vcvmapper plan" doc; ph
 
 ## 4. Scopes, paths and the overlay
 
-- [ ] `Pattern.hpp`: parse `@scope` and `$tag`; keep old patterns valid. Tests in `tools/`.
-- [ ] `core/Groups`: implicit groups (touching runs), ordinals per model, twin lookup; rebuilt on add, remove and move.
-- [ ] `Binding::resolve`: apply clause scopes; `Selector::scope` expands learned targets to their twins.
-- [ ] `MAX_LANES = 64`, lane *i* reads channel `i mod channels`.
-- [ ] `Settings::spread`, applied per lane after the shape.
-- [ ] `kit/Menus.hpp`: breadcrumb path editor with live lists, match counts and `#N name` items.
-- [ ] Overlay widget on the rack: outlines matched controls and brackets groups while editing.
-- [ ] Changed-match flag on a binding's screen row.
-- [ ] Marionette and Pin: path row and scope and spread settings on the EDIT page.
+- [x] `Pattern.hpp`: parse `@scope` and `$tag`; keep old patterns valid. Tests in `tools/`.
+- [x] `core/Groups`: implicit groups (touching runs), ordinals per model, twin lookup; rebuilt on add, remove and move.
+- [x] `Binding::resolve`: apply clause scopes; `Settings::twins` expands learned targets to their twins.
+- [x] `MAX_LANES = 64`, lane *i* reads channel `i mod channels`.
+- [x] `Settings::spread`, applied per lane after the shape.
+- [x] `core/BindingUi`: breadcrumb path editor with live lists, match counts and `#N name` items.
+- [x] Overlay widget on the rack: outlines matched controls and brackets groups while editing.
+- [x] Changed-match flag on a binding's screen row.
+- [x] Marionette and Pin: path row and scope and spread settings on the EDIT page.
 - [ ] In Rack: a four-voice patch of identical chains, one knob learned, driven mono and poly, voices dragged around.
 
 ## 5. Groups and tags

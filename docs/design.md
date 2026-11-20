@@ -26,8 +26,8 @@ A group named like a keyword is written in quotes (`@"row"`). `$tag` names the s
 no scope.
 
 The **anchor** is the owning module for a typed clause and the learned module for a learned target. Learned targets
-stay keyed by module id in `Selector::targets`; the selector gains one scope for them, `none` by default, which adds
-their twins.
+stay keyed by module id in `Selector::targets`, and `Settings::twins` (off, row, column or rack, off by default) adds
+their twins. It lives in the settings rather than the selector so the screens' setting lists can edit it.
 
 ### Groups and twins
 
@@ -48,7 +48,7 @@ the patch was saved flags it on its screen row until acknowledged.
 ### Spread
 
 `Settings::spread`, −1 to 1. Lane *i* of *n* is offset by `spread · (i/(n−1) − ½)` of the control's travel, applied
-after the shape. Identical voices are where detune is wanted, and lanes make it nearly free.
+after the shape, while the CV is plugged in. Identical voices are where detune is wanted, and lanes make it nearly free.
 
 ### More than 16 targets
 

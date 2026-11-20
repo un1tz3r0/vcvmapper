@@ -93,7 +93,8 @@ inline void paint(kit::Painter& p, const kit::Theme& t, const ViewState& s) {
 			if (on)
 				p.label({PAD, y}, ">", SIZE, t.ring, -1);
 			p.label({PAD + 8, y}, s.items[i].first, SIZE, on ? t.ring : t.field * 0.7f, -1);
-			p.label({p.width - PAD, y}, s.items[i].second, SIZE, on ? t.probe : t.field, 1);
+			const float room = p.width - 2 * PAD - 8 - 0.52f * SIZE * (s.items[i].first.size() + 1);
+			p.label({p.width - PAD, y}, clip(s.items[i].second, room, SIZE), SIZE, on ? t.probe : t.field, 1);
 		}
 	}
 

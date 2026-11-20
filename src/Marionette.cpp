@@ -1,5 +1,6 @@
 #include "plugin.hpp"
 #include "core/BindingUi.hpp"
+#include "core/Overlay.hpp"
 #include "kit/Nvg.hpp"
 #include "kit/OledDisplay.hpp"
 #include "kit/PanelArt.hpp"
@@ -9,12 +10,15 @@
 using namespace puppeteer;
 using namespace marionette;
 
+// The edit page lists the path first, then every setting.
+constexpr int EDIT_ITEMS = fields::COUNT + 1;
+
 struct Marionette : Module, BindingHost {
 	enum Learn { OFF, REPLACE, ADD };
 
 	Binding bindings[CHANNELS];
 	int accent = 0;
-	int cursor = 0; // the setting the edit page points at
+	int cursor = 0; // the edit page's item: 0 is the path, then fields::ALL
 	std::atomic<int> selected{0}, learning{OFF};
 	std::atomic<bool> editing{false};
 	dsp::BooleanTrigger learnTrigger, editTrigger;
@@ -90,10 +94,11 @@ struct Marionette : Module, BindingHost {
 
 struct MarionetteScreen : kit::OledDisplay {
 	Marionette* module = nullptr;
+	MenuWatch* watch = nullptr; // the widget's, so the overlay shows while the path menu is up
 	ViewState state;
 
 	static Row row(const Binding& b, int learning) {
-		static const char* PROBLEMS[] = {"", "", "BAD PATTERN", "NO MATCH", "TARGET MISSING", "IN USE BY OTHER MAPPER"};
+		static const char* PROBLEMS[] = {"", "", "BAD PATH", "NO MATCH", "TARGET MISSING", "IN USE BY OTHER MAPPER"};
 		Row r;
 		Binding::Problem problem = b.problem();
 		const Plan* p = b.plan();
@@ -113,6 +118,10 @@ struct MarionetteScreen : kit::OledDisplay {
 		else if (problem != Binding::Problem::Empty)
 			r.label = b.selector.pattern.empty() ? "?" : b.selector.pattern;
 		r.note = PROBLEMS[int(problem)];
+		if (int was = b.shifted(); was >= 0 && problem == Binding::Problem::None) {
+			r.note = string::f("WAS %d TARGETS, NOW %d", was, p->count);
+			r.alert = true;
+		}
 		if (learning) {
 			r.note = learning == Marionette::ADD ? "TOUCH ANOTHER TARGET" : "TOUCH A KNOB OR LIGHT";
 			r.alert = true;
@@ -131,10 +140,12 @@ struct MarionetteScreen : kit::OledDisplay {
 				state.rows[i] = row(module->bindings[i], i == state.selected ? module->learning.load() : 0);
 			const Settings& s = module->bindings[state.selected].settings;
 			if (state.editing) {
+				const std::string& pattern = module->bindings[state.selected].selector.pattern;
+				state.items.push_back({"PATH", pattern.empty() ? "CLICK TO ADD" : pattern});
 				for (const Field& f : fields::ALL)
 					state.items.push_back({f.name, f.show(s)});
-				state.left = fields::ALL[state.cursor].name;
-				state.right = fields::ALL[state.cursor].show(s);
+				state.left = state.items[state.cursor].first;
+				state.right = state.cursor ? state.items[state.cursor].second : "CLICK";
 			}
 			else {
 				state.left = string::f("CH %d", state.selected + 1);
@@ -153,13 +164,20 @@ struct MarionetteScreen : kit::OledDisplay {
 		if (!module || e.action != GLFW_PRESS)
 			return;
 		bool editing = module->editing;
-		int i = Geometry(box.size.x, box.size.y, fields::COUNT).hit(e.pos.y, editing, editing ? fields::COUNT : CHANNELS);
+		int i = Geometry(box.size.x, box.size.y, EDIT_ITEMS).hit(e.pos.y, editing, editing ? EDIT_ITEMS : CHANNELS);
 		if (i < 0)
 			return;
 		if (editing)
 			module->cursor = i;
 		else
 			module->selected = i;
+		if (editing && i == 0 && e.button == GLFW_MOUSE_BUTTON_LEFT) {
+			ui::Menu* menu = createMenu();
+			watch->opened(menu);
+			appendPathMenu(menu, module, module->selected);
+			e.consume(this);
+			return;
+		}
 		if (e.button == GLFW_MOUSE_BUTTON_LEFT)
 			e.consume(this);
 	}
@@ -169,6 +187,7 @@ struct MarionetteScreen : kit::OledDisplay {
 struct MarionetteWidget : ModuleWidget {
 	static constexpr float CLICKS = 100.f; // per encoder turn
 	Learner learner;
+	MenuWatch menu;
 	float seen[2] = {NAN, NAN};
 
 	MarionetteWidget(Marionette* module) {
@@ -180,6 +199,7 @@ struct MarionetteWidget : ModuleWidget {
 		auto* screen = createWidget<MarionetteScreen>(mm2px(Vec(glass.min.x, glass.min.y)));
 		screen->box.size = mm2px(Vec(glass.max.x - glass.min.x, glass.max.y - glass.min.y));
 		screen->module = module;
+		screen->watch = &menu;
 		addChild(screen);
 	}
 
@@ -208,13 +228,17 @@ struct MarionetteWidget : ModuleWidget {
 		int sel = m->selected;
 		int item = clicks(m, 0), value = clicks(m, 1);
 		if (item && m->editing)
-			m->cursor = clamp(m->cursor + item, 0, fields::COUNT - 1);
+			m->cursor = clamp(m->cursor + item, 0, EDIT_ITEMS - 1);
 		else if (item)
 			m->selected = sel = clamp(sel + item, 0, CHANNELS - 1);
-		if (value) {
-			fields::ALL[m->editing ? m->cursor : 0].turn(m->bindings[sel].settings, value);
+		// The path is edited from its menu, so the value knob leaves it alone.
+		int field = m->editing ? m->cursor - 1 : 0;
+		if (value && field >= 0) {
+			fields::ALL[field].turn(m->bindings[sel].settings, value);
 			m->bindings[sel].changed();
 		}
+		if (m->editing || menu.open())
+			Overlay::show(m->bindings[sel]);
 
 		Target t;
 		if (learner.step(this, m->learning, t)) {
@@ -231,6 +255,7 @@ struct MarionetteWidget : ModuleWidget {
 	void appendContextMenu(Menu* menu) override {
 		Marionette* m = getModule<Marionette>();
 		int sel = m->selected;
+		this->menu.opened(menu);
 		menu->addChild(new MenuSeparator);
 		menu->addChild(createMenuLabel(string::f("Channel %d", sel + 1)));
 		appendBindingMenu(menu, m, sel, [=](bool add) {
