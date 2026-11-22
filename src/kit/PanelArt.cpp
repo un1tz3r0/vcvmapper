@@ -60,7 +60,8 @@ void PanelArt::paint(NVGcontext* vg) const {
 	};
 	rect({0, 0}, {panel.width, panel.height}, 0, c.panel);
 	const float bezel = kit::Panel::BEZEL;
-	rect({panel.screen.min.x - bezel, panel.screen.min.y - bezel}, {panel.screen.max.x + bezel, panel.screen.max.y + bezel}, 1.6f, c.bezel);
+	if (panel.hasScreen())
+		rect({panel.screen.min.x - bezel, panel.screen.min.y - bezel}, {panel.screen.max.x + bezel, panel.screen.max.y + bezel}, 1.6f, c.bezel);
 	for (const kit::Panel::Rect& r : panel.boxes)
 		rect(r.min, r.max, 1.6f, c.box);
 
@@ -106,6 +107,7 @@ void addPanel(ModuleWidget* widget, const kit::Panel& panel) {
 			}
 			case kit::Panel::TRIMPOT: widget->addParam(createParamCentered<Trimpot>(at, module, c.id)); break;
 			case kit::Panel::BUTTON: widget->addParam(createLightParamCentered<VCVLightBezel<WhiteLight>>(at, module, c.id, c.light)); break;
+			case kit::Panel::LATCH: widget->addParam(createLightParamCentered<VCVLightBezelLatch<WhiteLight>>(at, module, c.id, c.light)); break;
 			case kit::Panel::INPUT: widget->addInput(createInputCentered<ThemedPJ301MPort>(at, module, c.id)); break;
 			case kit::Panel::OUTPUT: widget->addOutput(createOutputCentered<ThemedPJ301MPort>(at, module, c.id)); break;
 		}

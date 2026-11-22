@@ -77,6 +77,21 @@ void Overlay::drawLayer(const DrawArgs& args, int layer) {
 		nvgStrokeWidth(vg, 3);
 		nvgStrokeColor(vg, nvgTransRGBA(color, 180));
 		nvgStroke(vg);
+		const std::string& name = s.layout.groups[g].name;
+		std::shared_ptr<window::Font> font = APP->window->uiFont;
+		if (name.empty() || !font || font->handle < 0)
+			continue;
+		nvgFontFaceId(vg, font->handle);
+		nvgFontSize(vg, 13);
+		nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+		float bounds[4];
+		nvgTextBounds(vg, x0 + 6, y + 3, name.c_str(), nullptr, bounds);
+		nvgBeginPath(vg);
+		nvgRoundedRect(vg, bounds[0] - 3, bounds[1] - 1, bounds[2] - bounds[0] + 6, bounds[3] - bounds[1] + 2, 3);
+		nvgFillColor(vg, nvgTransRGBA(color, 200));
+		nvgFill(vg);
+		nvgFillColor(vg, nvgRGB(0x10, 0x10, 0x12));
+		nvgText(vg, x0 + 6, y + 3, name.c_str(), nullptr);
 	}
 }
 

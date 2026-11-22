@@ -1,7 +1,7 @@
 {
   "slug": "Puppeteer",
   "name": "Puppeteer",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "license": "MIT",
   "brand": "un1tz3r0",
   "author": "Victor Michael Ondras-Condino",
@@ -24,6 +24,24 @@
       "name": "Marionette",
       "description": "Eight channels that each bind a jack to knobs, switches, buttons or lights on other modules, edited from its screen.",
       "tags": ["Utility", "Controller", "Polyphonic"]
+    },
+    {
+      "slug": "Troupe",
+      "name": "Troupe",
+      "description": "Opens a named group of modules, with four macro knobs that drive controls within the group.",
+      "tags": ["Utility", "Controller"]
+    },
+    {
+      "slug": "Wing",
+      "name": "Wing",
+      "description": "Closes the group a Troupe opened.",
+      "tags": ["Utility", "Blank"]
+    },
+    {
+      "slug": "Tag",
+      "name": "Tag",
+      "description": "Names the module beside it, so paths can reach it as $name.",
+      "tags": ["Utility"]
     }
   ]
 }

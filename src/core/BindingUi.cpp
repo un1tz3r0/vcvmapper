@@ -2,6 +2,7 @@
 #include "Resolve.hpp"
 #include "../kit/Menus.hpp"
 #include <map>
+#include <set>
 
 namespace puppeteer {
 
@@ -123,10 +124,11 @@ void appendBindingMenu(ui::Menu* menu, Module* m, int index, std::function<void(
 	}));
 
 	menu->addChild(createSubmenuItem("Path", b->selector.pattern.empty() ? "" : "On", [=](ui::Menu* sub) { appendPathMenu(sub, m, index); }));
-	menu->addChild(createIndexSubmenuItem("Twins of learned targets",
-		{"Off", "In the other groups on its row", "Above and below it", "In every group in the rack"},
-		[=] { return (size_t) s->twins; },
-		[=](size_t i) { s->twins = Twins(i); b->changed(); }));
+	if (!b->locked)
+		menu->addChild(createIndexSubmenuItem("Twins of learned targets",
+			{"Off", "In the other groups on its row", "Above and below it", "In every group in the rack"},
+			[=] { return (size_t) s->twins; },
+			[=](size_t i) { s->twins = Twins(i); b->changed(); }));
 	menu->addChild(createMenuItem("Unbind all", "", edit("unbind", [](Selector& s) { s = Selector(); }), b->selector.empty()));
 
 	menu->addChild(new ui::MenuSeparator);
@@ -177,6 +179,20 @@ static bool plainName(const std::string& name) {
 	return !name.empty() && name.find_first_of(",:*?#$@\"") == std::string::npos && name.find("light:") != 0;
 }
 
+/** Each of `sample`'s params as an item that adds `base` with that param. */
+static void appendItems(ui::Menu* menu, Module* sample, Clause base, std::function<void(Clause)> add) {
+	for (int id = 0; id < (int) sample->paramQuantities.size(); id++) {
+		std::string name = itemName(sample, false, id);
+		Clause k = base;
+		if (plainName(name) && std::count_if(sample->paramQuantities.begin(), sample->paramQuantities.end(),
+			[&](ParamQuantity* pq) { return pq->name == name; }) == 1)
+			k.name = name;
+		else
+			k.first = k.last = id;
+		menu->addChild(createMenuItem(string::f("#%d %s", id, name.c_str()), "", [=] { add(k); }));
+	}
+}
+
 static void appendClauseMenu(ui::Menu* menu, Binding* b, Module* m, int index, int which) {
 	std::string error;
 	std::vector<Clause> clauses = Clause::parseAll(b->selector.pattern, error);
@@ -211,23 +227,39 @@ static void appendClauseMenu(ui::Menu* menu, Binding* b, Module* m, int index, i
 		return;
 
 	Snapshot snap = Snapshot::take(widgetOf(m->id));
-	auto count = [=](Clause k) { return std::to_string(match(k, snap).size()); };
+	bool locked = b->locked;
+	Scope scope = locked ? Scope::Group : c.scope;
+	auto count = [=](Clause k) { return std::to_string(match(k, snap, locked).size()); };
 	menu->addChild(new ui::MenuSeparator);
 
-	menu->addChild(createSubmenuItem("Where", c.scopeText(), [=](ui::Menu* sub) {
-		static const char* WHERE[] = {"Anywhere", "On this module's row", "Above and below this module", "In this module's group"};
-		for (int i = 0; i < 4; i++) {
-			Clause k = c;
-			k.scope = Scope(i);
-			sub->addChild(createCheckMenuItem(WHERE[i], count(k), [=] { return c.scope == Scope(i); },
-				change("change path scope", [=](Clause& x) { x.scope = Scope(i); })));
-		}
-		sub->addChild(createMenuLabel("In groups named"));
-		sub->addChild(entry(c.scope == Scope::Named ? c.groups : "", "Voice*", typed("change path scope", [](Clause& x, const std::string& t) {
-			if (t.empty() || !Clause::parseScope("\"" + t + "\"", x))
-				x.scope = Scope::All;
-		})));
-	}));
+	if (locked)
+		menu->addChild(createMenuLabel("Where: this group only"));
+	else
+		menu->addChild(createSubmenuItem("Where", c.scopeText(), [=](ui::Menu* sub) {
+			static const char* WHERE[] = {"Anywhere", "On this module's row", "Above and below this module", "In this module's group"};
+			for (int i = 0; i < 4; i++) {
+				Clause k = c;
+				k.scope = Scope(i);
+				sub->addChild(createCheckMenuItem(WHERE[i], count(k), [=] { return c.scope == Scope(i); },
+					change("change path scope", [=](Clause& x) { x.scope = Scope(i); })));
+			}
+			sub->addChild(new ui::MenuSeparator);
+			sub->addChild(createMenuLabel("In groups named"));
+			std::set<std::string> names;
+			for (const Layout::Group& g : snap.layout.groups)
+				if (!g.name.empty())
+					names.insert(g.name);
+			for (const std::string& name : names) {
+				Clause k = c;
+				Clause::parseScope("\"" + name + "\"", k);
+				sub->addChild(createCheckMenuItem(name, count(k), [=] { return c.scope == Scope::Named && c.groups == name; },
+					change("change path scope", [=](Clause& x) { Clause::parseScope("\"" + name + "\"", x); })));
+			}
+			sub->addChild(entry(c.scope == Scope::Named ? c.groups : "", "Voice*", typed("change path scope", [](Clause& x, const std::string& t) {
+				if (t.empty() || !Clause::parseScope("\"" + t + "\"", x))
+					x.scope = Scope::All;
+			})));
+		}));
 
 	// Plugins and modules present, with how many instances the clause would reach through each.
 	std::map<std::string, std::string> plugins, models; // slug -> name
@@ -239,7 +271,7 @@ static void appendClauseMenu(ui::Menu* menu, Binding* b, Module* m, int index, i
 	auto instances = [=](Clause k) {
 		int n = 0;
 		for (int i = 0; i < (int) snap.modules.size(); i++)
-			n += i != snap.owner && snap.layout.admits(k.scope, k.groups, snap.owner, i) && matchModule(k, snap.modules[i]->model);
+			n += i != snap.owner && snap.layout.admits(scope, k.groups, snap.owner, i) && matchModule(k, snap.modules[i]->model);
 		return std::to_string(n);
 	};
 	menu->addChild(createSubmenuItem("Plugin", c.plugin, [=](ui::Menu* sub) {
@@ -280,7 +312,7 @@ static void appendClauseMenu(ui::Menu* menu, Binding* b, Module* m, int index, i
 		std::map<int, Item> items;
 		for (int i = 0; i < (int) snap.modules.size(); i++) {
 			Module* mod = snap.modules[i]->module;
-			if (i == snap.owner || !snap.layout.admits(c.scope, c.groups, snap.owner, i) || !matchModule(c, snap.modules[i]->model))
+			if (i == snap.owner || !snap.layout.admits(scope, c.groups, snap.owner, i) || !matchModule(c, snap.modules[i]->model))
 				continue;
 			int n = c.light ? (int) mod->lights.size() : (int) mod->paramQuantities.size();
 			std::map<std::string, int> seen;
@@ -337,43 +369,42 @@ void appendPathMenu(ui::Menu* menu, Module* m, int index) {
 	for (int i = 0; i < (int) clauses.size(); i++)
 		menu->addChild(createSubmenuItem(clauses[i].str(), "", [=](ui::Menu* sub) { appendClauseMenu(sub, b, m, index, i); }));
 
-	// A new clause starts from a module in the rack and one of its controls.
+	// A new clause starts from a module in the rack, or a tag, and one of its controls.
+	auto add = [=](Clause k) {
+		b->edit(m, index, "add path", [&](Selector& s) { s.pattern += (trim(s.pattern).empty() ? "" : ", ") + k.str(); });
+	};
 	menu->addChild(createSubmenuItem("Add a path", "", [=](ui::Menu* sub) {
 		Snapshot snap = Snapshot::take(widgetOf(m->id));
-		std::map<std::string, std::pair<plugin::Model*, int>> models;
+		std::map<std::string, std::pair<Module*, int>> models; // label -> a sample module, and how many there are
 		for (int i = 0; i < (int) snap.modules.size(); i++)
 			if (i != snap.owner) {
 				plugin::Model* model = snap.modules[i]->model;
 				auto& entry = models[model->plugin->name + " " + model->name];
-				entry.first = model;
+				entry.first = snap.modules[i]->module;
 				entry.second++;
 			}
 		for (const auto& row : models) {
-			const std::string& label = row.first;
-			plugin::Model* model = row.second.first;
-			int instances = row.second.second;
-			Module* sample = nullptr;
-			for (app::ModuleWidget* mw : snap.modules)
-				if (mw->model == model && mw->module != m)
-					sample = mw->module;
-			sub->addChild(createSubmenuItem(label, std::to_string(instances), [=](ui::Menu* items) {
-				for (int id = 0; sample && id < (int) sample->paramQuantities.size(); id++) {
-					std::string name = itemName(sample, false, id);
-					Clause k;
-					k.plugin = model->plugin->slug;
-					k.model = model->slug;
-					if (plainName(name) && std::count_if(sample->paramQuantities.begin(), sample->paramQuantities.end(),
-						[&](ParamQuantity* pq) { return pq->name == name; }) == 1)
-						k.name = name;
-					else
-						k.first = k.last = id;
-					items->addChild(createMenuItem(string::f("#%d %s", id, name.c_str()), "", [=] {
-						b->edit(m, index, "add path", [&](Selector& s) {
-							s.pattern += (trim(s.pattern).empty() ? "" : ", ") + k.str();
-						});
-					}));
-				}
-			}));
+			Module* sample = row.second.first;
+			Clause k;
+			k.plugin = sample->model->plugin->slug;
+			k.model = sample->model->slug;
+			sub->addChild(createSubmenuItem(row.first, std::to_string(row.second.second), [=](ui::Menu* items) { appendItems(items, sample, k, add); }));
+		}
+	}));
+	menu->addChild(createSubmenuItem("Add a tagged path", "", [=](ui::Menu* sub) {
+		Snapshot snap = Snapshot::take(widgetOf(m->id));
+		std::map<std::string, Module*> tags;
+		for (const Box& box : snap.layout.boxes)
+			if ((box.role == Role::TagLeft || box.role == Role::TagRight) && !box.name.empty())
+				for (int i : snap.layout.tagged(box.name))
+					tags.emplace(box.name, snap.modules[i]->module);
+		if (tags.empty())
+			sub->addChild(createMenuLabel("No named Tag touches a module"));
+		for (const auto& tag : tags) {
+			Module* sample = tag.second;
+			Clause k;
+			k.tag = tag.first;
+			sub->addChild(createSubmenuItem("$" + tag.first, sample->model->name, [=](ui::Menu* items) { appendItems(items, sample, k, add); }));
 		}
 	}));
 
@@ -381,7 +412,13 @@ void appendPathMenu(ui::Menu* menu, Module* m, int index) {
 	menu->addChild(createMenuLabel("plugin/model@where:control, comma between several"));
 	menu->addChild(createMenuLabel("* and ? match any text; #3 or #0-7 are ids"));
 	menu->addChild(createMenuLabel("where: row, column, group, or a group name"));
+	menu->addChild(createMenuLabel("$name:control is the module a Tag names"));
 	menu->addChild(createMenuLabel("light:name or light:#N reads lights"));
+}
+
+void appendNameEntry(ui::Menu* menu, std::string* name, const char* placeholder) {
+	menu->addChild(createMenuLabel("Name"));
+	menu->addChild(entry(*name, placeholder, [=](const std::string& text) { *name = cleanName(text); }));
 }
 
 } // namespace puppeteer

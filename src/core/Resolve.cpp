@@ -19,7 +19,12 @@ Snapshot Snapshot::take(app::ModuleWidget* owner) {
 	for (app::ModuleWidget* mw : s.modules) {
 		Vec c = cell(mw);
 		int width = (int) std::round(mw->box.size.x / RACK_GRID_WIDTH);
-		boxes.push_back({mw->module->id, int(c.y), int(c.x), int(c.x) + width, mw->model->plugin->slug + "/" + mw->model->slug});
+		Box b{mw->module->id, int(c.y), int(c.x), int(c.x) + width, mw->model->plugin->slug + "/" + mw->model->slug, Role::Plain, ""};
+		if (auto* marker = dynamic_cast<Marker*>(mw->module)) {
+			b.role = marker->role();
+			b.name = marker->label();
+		}
+		boxes.push_back(std::move(b));
 	}
 	s.layout = Layout::of(std::move(boxes));
 	s.owner = owner && owner->module ? s.find(owner->module->id) : -1;
@@ -44,15 +49,18 @@ std::string itemName(Module* m, bool light, int index) {
 	return index < (int) m->paramQuantities.size() ? m->paramQuantities[index]->name : "";
 }
 
-std::vector<Target> match(const Clause& c, const Snapshot& s) {
+std::vector<Target> match(Clause c, const Snapshot& s, bool locked) {
 	std::vector<Target> out;
-	// Tags arrive with the tag module, and cords with the module that has selecting jacks.
-	if (!c.tag.empty() || c.scope == Scope::Cable)
+	if (locked)
+		c.scope = Scope::Group;
+	// Cords arrive with the module that has selecting jacks.
+	if (c.scope == Scope::Cable)
 		return out;
+	std::vector<int> tagged = c.tag.empty() ? std::vector<int>() : s.layout.tagged(c.tag);
 	for (int i = 0; i < int(s.modules.size()); i++) {
-		app::ModuleWidget* mw = s.modules[i];
-		Module* m = mw->module;
-		if (i == s.owner || !s.layout.admits(c.scope, c.groups, s.owner, i) || !matchModule(c, mw->model))
+		Module* m = s.modules[i]->module;
+		bool named = c.tag.empty() ? matchModule(c, s.modules[i]->model) : std::count(tagged.begin(), tagged.end(), i);
+		if (i == s.owner || !named || !s.layout.admits(c.scope, c.groups, s.owner, i))
 			continue;
 		Target t;
 		t.kind = c.light ? Kind::Light : Kind::Param;

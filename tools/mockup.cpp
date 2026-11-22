@@ -1,5 +1,5 @@
 // Panel mockups as SVG, drawn by the same layout and screen code as the plugin, so the look can be checked without Rack.
-// Usage: mockup [rack-dir]   writes pin-*.svg and marionette-*.svg; rack-dir (Rack's source or SDK) supplies its
+// Usage: mockup [rack-dir]   writes an SVG of each panel, light and dark; rack-dir (Rack's source or SDK) supplies its
 // jacks, screws and label font.
 #include <cmath>
 #include <fstream>
@@ -7,16 +7,32 @@
 #include "pin/View.hpp"
 #include "core/Settings.hpp"
 #include "marionette/View.hpp"
+#include "groups/View.hpp"
 #include "PanelSvg.hpp"
 #include "SvgPainter.hpp"
 
 using namespace kit;
 
-static void pinMockup(const std::string& path, bool dark, int accent, const std::string& rackDir) {
-	const Panel p = pin::panel();
+/** Writes `p` with `paint` drawing its screen, if it has one. */
+template <typename Paint>
+static void write(const std::string& path, const Panel& p, bool dark, int accent, const std::string& rackDir, Paint paint) {
 	const Panel::Rect& g = p.screen;
 	constexpr float PX = 75 / 25.4f; // Rack's pixels per millimetre
-	const Theme theme = Theme::accent(accent);
+	std::string glass;
+	if (p.hasScreen()) {
+		const Theme theme = Theme::accent(accent);
+		SvgPainter screen((g.max.x - g.min.x) * PX, (g.max.y - g.min.y) * PX, theme.glass);
+		screen.radius = 2.5f;
+		paint(screen, theme);
+		char place[160];
+		std::snprintf(place, sizeof place, "x='%g' y='%g' width='%g' height='%g'", g.min.x, g.min.y, g.max.x - g.min.x, g.max.y - g.min.y);
+		glass = screen.str(place);
+	}
+	std::ofstream(path) << panelSvg(p, dark, 6, glass, rackDir, [](int) { return 0.5f; });
+}
+
+static void pinMockup(const std::string& path, bool dark, int accent, const std::string& rackDir) {
+	const Panel p = pin::panel();
 
 	pin::ViewState s;
 	s.module = "VCO";
@@ -27,19 +43,11 @@ static void pinMockup(const std::string& path, bool dark, int accent, const std:
 	for (int i = 0; i < 64; ++i)
 		s.trace.push_back(0.55f + 0.3f * std::sin(i * 0.2f) * std::cos(i * 0.045f));
 
-	SvgPainter screen((g.max.x - g.min.x) * PX, (g.max.y - g.min.y) * PX, theme.glass);
-	screen.radius = 2.5f;
-	pin::paint(screen, theme, s);
-	char place[160];
-	std::snprintf(place, sizeof place, "x='%g' y='%g' width='%g' height='%g'", g.min.x, g.min.y, g.max.x - g.min.x, g.max.y - g.min.y);
-	std::ofstream(path) << panelSvg(p, dark, 6, screen.str(place), rackDir, [](int) { return 0.5f; });
+	write(path, p, dark, accent, rackDir, [&](Painter& painter, const Theme& theme) { pin::paint(painter, theme, s); });
 }
 
 static void marionetteMockup(const std::string& path, bool dark, int accent, bool editing, const std::string& rackDir) {
 	const Panel p = marionette::panel();
-	const Panel::Rect& g = p.screen;
-	constexpr float PX = 75 / 25.4f;
-	const Theme theme = Theme::accent(accent);
 
 	marionette::ViewState s;
 	s.rows[0] = {"VCO Frequency", "MOD", "", false, 0.62f, 0.5f};
@@ -69,12 +77,24 @@ static void marionetteMockup(const std::string& path, bool dark, int accent, boo
 		s.right = "DEPTH 100%";
 	}
 
-	SvgPainter screen((g.max.x - g.min.x) * PX, (g.max.y - g.min.y) * PX, theme.glass);
-	screen.radius = 2.5f;
-	marionette::paint(screen, theme, s);
-	char place[160];
-	std::snprintf(place, sizeof place, "x='%g' y='%g' width='%g' height='%g'", g.min.x, g.min.y, g.max.x - g.min.x, g.max.y - g.min.y);
-	std::ofstream(path) << panelSvg(p, dark, 6, screen.str(place), rackDir, [](int) { return 0.5f; });
+	write(path, p, dark, accent, rackDir, [&](Painter& painter, const Theme& theme) { marionette::paint(painter, theme, s); });
+}
+
+static void groupMockups(bool dark, int accent, const std::string& rackDir) {
+	const std::string suffix = dark ? "-dark.svg" : "-light.svg";
+	troupe::ViewState t;
+	t.name = "VOICE 1";
+	t.members = 6;
+	t.selected = 1;
+	t.macros[0] = {"VCF Cutoff", 0.35f};
+	t.macros[1] = {"3 targets", -0.6f};
+	t.macros[2] = {"ADSR Release", 0.f};
+	if (dark)
+		t.note = "TOUCH A KNOB", t.alert = true;
+	write("troupe" + suffix, troupe::panel(), dark, accent, rackDir, [&](Painter& p, const Theme& theme) { troupe::paint(p, theme, t); });
+	tag::ViewState g{"lead", dark, true};
+	write("tag" + suffix, tag::panel(), dark, accent, rackDir, [&](Painter& p, const Theme& theme) { tag::paint(p, theme, g); });
+	write("wing" + suffix, wing::panel(), dark, accent, rackDir, [](Painter&, const Theme&) {});
 }
 
 int main(int argc, char** argv) {
@@ -83,4 +103,6 @@ int main(int argc, char** argv) {
 	pinMockup("pin-dark.svg", true, 2, rack);
 	marionetteMockup("marionette-light.svg", false, 0, false, rack);
 	marionetteMockup("marionette-dark.svg", true, 3, true, rack);
+	groupMockups(false, 0, rack);
+	groupMockups(true, 2, rack);
 }

@@ -133,24 +133,23 @@ Plan* Binding::swap(int64_t frame) {
 	return n;
 }
 
-void Binding::process(const Module::ProcessArgs& args, Input& in, Output& out, float depth) {
+void Binding::run(const Module::ProcessArgs& args, const float* volts, int channels, Output* out, float depth) {
 	Plan* p = swap(args.frame);
 	int n = p ? p->count : 0;
-	out.setChannels(clamp(n, 1, PORT_MAX_CHANNELS));
-	if (!n) {
-		out.setVoltage(0.f);
-		return;
+	if (out) {
+		out->setChannels(clamp(n, 1, PORT_MAX_CHANNELS));
+		if (!n)
+			out->setVoltage(0.f);
 	}
-	int channels = in.getChannels();
-	int64_t block = APP->engine->getBlock();
+	int64_t block = n ? APP->engine->getBlock() : 0;
 	for (int i = 0; i < n; i++) {
 		Lane& l = p->lanes[i];
 		float x = l.read(block);
 		l.position.store(x, std::memory_order_relaxed);
-		if (i < PORT_MAX_CHANNELS)
-			out.setVoltage(std::isnan(x) ? 0.f : l.target.kind == Kind::Light ? 10.f * x : p->settings.shape.reverse(x), i);
+		if (out && i < PORT_MAX_CHANNELS)
+			out->setVoltage(std::isnan(x) ? 0.f : l.target.kind == Kind::Light ? 10.f * x : p->settings.shape.reverse(x), i);
 		if (l.lease)
-			drive(l, *p, channels ? in.getVoltage(i % channels) : NAN, depth, args);
+			drive(l, *p, channels ? volts[i % channels] : NAN, depth, args);
 	}
 }
 
@@ -252,17 +251,21 @@ std::vector<std::pair<Target, bool>> Binding::resolve(app::ModuleWidget* owner) 
 	std::vector<Clause> clauses = Clause::parseAll(selector.pattern, error);
 	// Twins and patterns need the rack's widgets, which a loading patch doesn't have yet: they follow on the first
 	// update. Plain learned targets skip the rack altogether.
-	if (!owner || (settings.twins == Twins::None && clauses.empty())) {
+	if (!owner || (!locked && settings.twins == Twins::None && clauses.empty())) {
 		for (const Target& t : selector.targets)
 			add(t);
 		return out;
 	}
 	Snapshot snapshot = Snapshot::take(owner);
+	auto inGroup = [&](const Target& t) {
+		return !locked || snapshot.layout.admits(Scope::Group, "", snapshot.owner, snapshot.find(t.moduleId));
+	};
 	for (const Target& t : selector.targets)
-		for (const Target& u : twins(t, settings.twins, snapshot))
-			add(u);
+		for (const Target& u : twins(t, locked ? Twins::None : settings.twins, snapshot))
+			if (inGroup(u))
+				add(u);
 	for (const Clause& c : clauses)
-		for (const Target& t : match(c, snapshot))
+		for (const Target& t : match(c, snapshot, locked))
 			add(t);
 	return out;
 }

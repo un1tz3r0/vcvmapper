@@ -9,14 +9,14 @@ namespace kit {
 // A module's front panel in millimetres. The plugin builds its widgets and art from it and tools/render draws a
 // mockup of it, so the two can't disagree. Knobs are wired to the screen, which shows each value where its wire arrives.
 struct Panel {
-	enum Kind { KNOB, SELECTOR, TRIMPOT, BUTTON, INPUT, OUTPUT };
+	enum Kind { KNOB, SELECTOR, TRIMPOT, BUTTON, LATCH, INPUT, OUTPUT };
 	enum Style { LABEL, TITLE, BRAND, BOXED };
 	struct Control {
 		Kind kind;
 		int id; // param, input or output id, by kind
 		Vec2f at;
 		Rgba color;
-		int light = -1; // a BUTTON's light id
+		int light = -1; // a BUTTON's or LATCH's light id
 	};
 	struct Text {
 		Vec2f at;
@@ -41,7 +41,7 @@ struct Panel {
 	static constexpr float FONT_SIZE[] = {1.9f, 4.4f, 2.f, 1.9f}; // by Style
 
 	float width, height;
-	Rect screen; // the glass, inside a bezel BEZEL wide
+	Rect screen; // the glass, inside a bezel BEZEL wide; empty for a panel without one
 	std::vector<Control> controls;
 	std::vector<Text> texts;
 	std::vector<Wire> wires;
@@ -74,8 +74,10 @@ struct Panel {
 		taps.push_back({id, (at.y - screen.min.y) / (screen.max.y - screen.min.y), true, color});
 	}
 
-	void button(int id, int light, Vec2f at, const char* label) {
-		controls.push_back({BUTTON, id, at, {}, light});
+	bool hasScreen() const { return screen.max.x > screen.min.x; }
+
+	void button(int id, int light, Vec2f at, const char* label, Kind kind = BUTTON) {
+		controls.push_back({kind, id, at, {}, light});
 		text({at.x, at.y - JACK_LABEL}, label);
 	}
 

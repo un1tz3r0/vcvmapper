@@ -1,6 +1,7 @@
 #pragma once
 #include <cctype>
 #include <cstdlib>
+#include <cstring>
 #include <iterator>
 #include <string>
 #include <vector>
@@ -37,6 +38,15 @@ inline bool glob(const std::string& pattern, const std::string& text) {
 inline std::string trim(const std::string& s) {
 	size_t a = s.find_first_not_of(" \t"), b = s.find_last_not_of(" \t");
 	return a == std::string::npos ? "" : s.substr(a, b - a + 1);
+}
+
+/** A group or tag name that a pattern can quote: without the characters that patterns and globs read. */
+inline std::string cleanName(const std::string& s) {
+	std::string out;
+	for (char c : s)
+		if (!std::strchr(",:@\"$*?", c))
+			out += c;
+	return trim(out);
 }
 
 /** Which instances a clause may match, relative to its anchor: the module that owns the binding. */
