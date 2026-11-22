@@ -6,6 +6,7 @@
 #include "marionette/Layout.hpp"
 #include "groups/Layout.hpp"
 #include "tether/Layout.hpp"
+#include "stage/Layout.hpp"
 #include <cstdio>
 
 using namespace puppeteer;
@@ -398,6 +399,29 @@ static void tetherCords() {
 	remove(t); remove(same); remove(other); remove(learned);
 }
 
+static void stagePool() {
+	Dummy* d = dummy(400);
+	json_t* bindingsJ = json_array();
+	auto entry = [&](int source, json_t* bJ) { json_array_append_new(bindingsJ, json_pack("{s:i, s:o}", "source", source, "binding", bJ)); };
+	entry(2, bindingJ({param(d, 0)}));               // IN3
+	entry(2, bindingJ({param(d, 1)}, "overwrite"));  // IN3 again, no readback
+	entry(stage::JACKS + 4, bindingJ({param(d, 2)}, "overwrite")); // M5
+	entry(-1, bindingJ({param(d, 3)}));              // no source
+	Module* s = add(modelStage, 401, json_pack("{s:o, s:[f, f, f, f, f]}", "bindings", bindingsJ, "macros", 0.0, 0.0, 0.0, 0.0, -1.0));
+	cv(s, {2.5f}, stage::CV_INPUT + 2); run();
+	CHECK(near(scaled(d, 0), 0.75f) && near(scaled(d, 1), 0.75f), "two bindings share IN3, got %f %f", scaled(d, 0), scaled(d, 1));
+	CHECK(near(s->outputs[stage::CV_OUTPUT + 2].getVoltage(), 2.5f), "OUT3 reads back the first, got %f", s->outputs[stage::CV_OUTPUT + 2].getVoltage());
+	CHECK(near(d->params[2].getValue(), 0.f), "M5 at -100%% overwrites the switch to its bottom, got %f", d->params[2].getValue());
+	json_t* j = s->dataToJson();
+	CHECK(json_integer_value(json_object_get(json_array_get(json_object_get(j, "bindings"), 2), "source")) == stage::JACKS + 4, "sources save");
+	CHECK(json_integer_value(json_object_get(json_array_get(json_object_get(j, "bindings"), 4), "source")) == 4, "unused bindings default to their own jack");
+	CHECK(json_number_value(json_array_get(json_object_get(j, "macros"), 4)) == -1.0, "macros save");
+	json_decref(j);
+	unplug(s, stage::CV_INPUT + 2); run();
+	CHECK(near(scaled(d, 0), 0.5f), "unplugging hands IN3's knob back, got %f", scaled(d, 0));
+	remove(s); remove(d);
+}
+
 static void fieldsRoundTrip() {
 	Settings s;
 	for (const Field& f : fields::ALL) {
@@ -430,6 +454,7 @@ int main() {
 	wideAndSpread();
 	troupeMacros();
 	tetherCords();
+	stagePool();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;

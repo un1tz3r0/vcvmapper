@@ -10,6 +10,7 @@
 #include "groups/View.hpp"
 #include "tether/Layout.hpp"
 #include "tether/View.hpp"
+#include "stage/View.hpp"
 #include "PanelSvg.hpp"
 #include "SvgPainter.hpp"
 
@@ -107,6 +108,54 @@ static void tetherMockup(bool dark, int accent, const std::string& rackDir) {
 		[&](Painter& p, const Theme& theme) { tether::paint(p, theme, s); });
 }
 
+static void stageMockup(bool dark, int accent, const std::string& rackDir) {
+	using namespace stage;
+	ViewState s;
+	s.focused = true;
+	const char* bindingActions[] = {"LEARN", "LEARN+", "CLEAR", "EDIT"}, *editActions[] = {"LEARN", "LEARN+", "PATH", "CLEAR"};
+	const KnobLabel quick[] = {{"KNOB FROM", "0%"}, {"KNOB TO", "100%"}, {"CURVE", "+0.35"}, {"SPREAD", "+12%"}};
+	for (int i = 0; i < SOFT; i++) {
+		s.actions[i] = dark ? editActions[i] : bindingActions[i];
+		s.knobs[SOFT + i] = quick[i];
+	}
+	if (!dark) {
+		const KnobLabel bottom[] = {{"ROW", ""}, {"SOURCE", "IN2"}, {"DEPTH", "100%"}, {"MODE", "MODULATE"}};
+		std::copy(std::begin(bottom), std::end(bottom), s.knobs);
+		s.cursor = 1;
+		s.rows = {{"1", "IN1", "VCO: Frequency", "", false, false, 0.62f, 0.5f},
+		          {"2", "IN2", "4 targets", "", false, false, 0.31f, 0.4f},
+		          {"3", "M1", "VCF: Cutoff", "", false, false, 0.8f, NAN},
+		          {"4", "M1", "VCF: Resonance", "", false, false, 0.45f, NAN},
+		          {"5", "IN5", "Mixer: Level 1", "IN USE", true, false, NAN, NAN},
+		          {"6", "IN6", "", "TOUCH A KNOB", true, false, NAN, NAN},
+		          {"7", "IN7", "", "", false, true, NAN, NAN},
+		          {"8", "IN8", "", "", false, true, NAN, NAN},
+		          {"9", "--", "", "", false, true, NAN, NAN},
+		          {"10", "--", "", "", false, true, NAN, NAN},
+		          {"11", "--", "", "", false, true, NAN, NAN},
+		          {"12", "--", "", "", false, true, NAN, NAN}};
+	}
+	else {
+		s.page = EDIT_PAGE;
+		const KnobLabel bottom[] = {{"ITEM", ""}, {"VALUE", ""}, {"BINDING", "2"}, {"SOURCE", "IN2"}};
+		std::copy(std::begin(bottom), std::end(bottom), s.knobs);
+		s.cursor = 6;
+		s.heading = "2 IN2 4 targets";
+		puppeteer::Settings settings;
+		settings.shape.curve = 0.35f;
+		settings.spread = 0.12f;
+		s.items.push_back({"PATH", "VCO@Voice*:Freq*"});
+		for (const puppeteer::Field& f : puppeteer::fields::ALL)
+			s.items.push_back({f.name, f.show(settings)});
+		for (int i = 0; i < 160; i++) {
+			float cv = std::sin(i * 0.09f) * 0.8f;
+			s.source.push_back(cv);
+			s.result.push_back(0.4f + 0.3f * std::sin((i - 4) * 0.09f));
+		}
+	}
+	write(dark ? "stage-dark.svg" : "stage-light.svg", panel(), dark, accent, rackDir, [&](Painter& p, const Theme& theme) { paint(p, theme, s); });
+}
+
 int main(int argc, char** argv) {
 	const std::string rack = argc > 1 ? argv[1] : "";
 	pinMockup("pin-light.svg", false, 0, rack);
@@ -117,4 +166,6 @@ int main(int argc, char** argv) {
 	groupMockups(true, 2, rack);
 	tetherMockup(false, 0, rack);
 	tetherMockup(true, 3, rack);
+	stageMockup(false, 0, rack);
+	stageMockup(true, 2, rack);
 }

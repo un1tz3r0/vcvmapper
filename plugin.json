@@ -1,7 +1,7 @@
 {
   "slug": "Puppeteer",
   "name": "Puppeteer",
-  "version": "2.3.2",
+  "version": "2.3.3",
   "license": "MIT",
   "brand": "un1tz3r0",
   "author": "Victor Michael Ondras-Condino",
@@ -47,6 +47,12 @@
       "slug": "Tether",
       "name": "Tether",
       "description": "Drives a knob on whatever module its cord is patched to, passing the signal through.",
+      "tags": ["Utility", "Controller", "Polyphonic"]
+    },
+    {
+      "slug": "Stage",
+      "name": "Stage",
+      "description": "A hub of 64 bindings fed by eight jacks or eight macros, edited from a large screen by panel or keyboard.",
       "tags": ["Utility", "Controller", "Polyphonic"]
     }
   ]

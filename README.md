@@ -38,6 +38,15 @@ Everything Pin's menu offers (more targets, paths, twins, shape, timing) is in t
 
 **Tether** (4 HP) picks its target by cord. Patch **THRU** into any input of the module you want to drive, press **LEARN** and touch the control: the cord now names the module and the learned control names what to move on it. Move the cord and the binding follows, finding the same control on a module of the same model, or one with the same name on any other; when there is none the screen says what is missing. **IN** passes through to **THRU**, so Tether can sit in a cable that is already there, and with **THRU** unpatched the module feeding **IN** is the target instead. **CV** drives the target, or **IN** does when **CV** is unpatched. Stack several cables on **THRU** for one target per cable, following the CV's channels. A path with `@cable`, such as `*@cable:Freq*`, also reaches only the modules on the cords.
 
+**Stage** (30 HP) is the hub: 64 bindings behind one large screen. Each takes its CV from one of the eight inputs or one of eight macros, so one macro can fan out to many bindings, each with its own shape. Each output reads back the first binding on its input. The buttons above the screen pick a page, the buttons to its left do what the screen labels beside them, and the eight encoders under and beside it do what the screen says under and beside them.
+
+- **Bindings**: the list. Turn *ROW* or use the arrows to pick one, *SOURCE* or left and right to feed it, then *LEARN*. *EDIT* or select opens it.
+- **Edit**: the path and every setting, with a graph of the last second of its CV and its first target.
+- **Macros**: the eight encoders are the eight macros.
+- **Groups**: every group in the rack, with how many of Stage's targets sit in it. *SELECT* hands a group to Rack's selection.
+
+Click the screen and its rim lights: the arrows, Enter, Esc, Backspace, Tab and Shift then work it from the keyboard, and the d-pad, BACK and SHIFT do the same from the panel.
+
 ## Building
 
 ```sh
