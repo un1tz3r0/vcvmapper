@@ -6,6 +6,14 @@
 // Turns clauses and learned targets into targets in the rack. UI thread.
 namespace puppeteer {
 
+/** A module that shapes groups or names a neighbour, as Troupe, Wing and Tag do. */
+struct Marker {
+	virtual ~Marker() = default;
+	virtual Role role() const = 0;
+	/** The group's or the tag's name. */
+	virtual std::string label() const = 0;
+};
+
 /** The rack's modules in lane order, by row then left to right, with their groups. */
 struct Snapshot {
 	std::vector<app::ModuleWidget*> modules;
@@ -23,8 +31,8 @@ struct Snapshot {
 bool matchModule(const Clause& c, plugin::Model* model);
 /** The param's or light's name on `m`, empty when it has none. */
 std::string itemName(Module* m, bool light, int index);
-/** What the clause matches, in rack order, skipping the owner. */
-std::vector<Target> match(const Clause& c, const Snapshot& s);
+/** What the clause matches, in rack order, skipping the owner. `locked` keeps it to the owner's group. */
+std::vector<Target> match(Clause c, const Snapshot& s, bool locked = false);
 /** `t` and its twins, in rack order; just `t` when its module isn't in the snapshot. */
 std::vector<Target> twins(const Target& t, Twins scope, const Snapshot& s);
 

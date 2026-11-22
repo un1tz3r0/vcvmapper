@@ -45,8 +45,9 @@ inline std::string panelSvg(const Panel& p, bool dark, float scale, const std::s
 		  << base64(readFile(rackDir + "/res/fonts/Nunito-Bold.ttf")) << ")}</style>\n";
 
 	const Vec2f b0{p.screen.min.x - Panel::BEZEL, p.screen.min.y - Panel::BEZEL}, b1{p.screen.max.x + Panel::BEZEL, p.screen.max.y + Panel::BEZEL};
-	s << "<rect x='" << b0.x << "' y='" << b0.y << "' width='" << b1.x - b0.x << "' height='" << b1.y - b0.y << "' rx='1.6' fill='" << css(c.bezel) << "'/>\n"
-	  << screen;
+	if (p.hasScreen())
+		s << "<rect x='" << b0.x << "' y='" << b0.y << "' width='" << b1.x - b0.x << "' height='" << b1.y - b0.y << "' rx='1.6' fill='" << css(c.bezel) << "'/>\n"
+		  << screen;
 	for (const Panel::Rect& r : p.boxes)
 		s << "<rect x='" << r.min.x << "' y='" << r.min.y << "' width='" << r.max.x - r.min.x << "' height='" << r.max.y - r.min.y << "' rx='1.6' fill='"
 		  << css(c.box) << "'/>\n";
@@ -75,7 +76,8 @@ inline std::string panelSvg(const Panel& p, bool dark, float scale, const std::s
 			case Panel::KNOB: knob(k, Panel::KNOB_SIZE); break;
 			case Panel::SELECTOR: knob(k, Panel::SELECTOR_SIZE); break;
 			case Panel::TRIMPOT: art("Trimpot_bg", k.at, 6.05f), art("Trimpot", k.at, 6.05f); break;
-			case Panel::BUTTON: art("VCVBezel", k.at, 7.2f); break;
+			case Panel::BUTTON:
+			case Panel::LATCH: art("VCVBezel", k.at, 7.2f); break;
 			default: art(dark ? "PJ301M-dark" : "PJ301M", k.at, 8.03f);
 		}
 	for (Vec2f at : p.screws)

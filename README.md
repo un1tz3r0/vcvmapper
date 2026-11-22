@@ -30,6 +30,12 @@ Moving modules can change what a path or twins reach. When the count of targets 
 
 Everything Pin's menu offers (more targets, paths, twins, shape, timing) is in the context menu for the selected channel; right-click a row to open the menu for that channel.
 
+**Groups** are what `@group` and twins count in. Any run of modules touching side by side is one, and three modules make them explicit and named:
+
+- **Troupe** (4 HP) opens a group that runs to a Wing, the first gap, or the next Troupe. Click its screen to name it, and `VCF@Voice*:Cutoff` then reaches the VCFs in every group named *Voice…*. Its four macro knobs each drive controls within its own group: select a macro by touching it or clicking its row, press **LEARN**, and touch a knob in the group. A cloned group's macros drive the clone. *Select the group* in its menu hands the group to Rack's own duplicate, save and delete.
+- **Wing** (1 HP) closes a group.
+- **Tag** (2 HP) names the module touching it, on the side **SIDE** picks, so `$lead:Freq` reaches that module wherever it moves. Inside a Troupe's macros a tag means the tagged module in that group.
+
 ## Building
 
 ```sh

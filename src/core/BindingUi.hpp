@@ -25,6 +25,9 @@ void appendBindingMenu(ui::Menu* menu, Module* module, int index, std::function<
 /** The path editor: the whole pattern as text, then each clause as menus of what the rack holds now. */
 void appendPathMenu(ui::Menu* menu, Module* module, int index);
 
+/** A menu field that renames a group or a tag, keeping the name quotable in a pattern. */
+void appendNameEntry(ui::Menu* menu, std::string* name, const char* placeholder);
+
 /** Whether a context menu a widget opened is still up, so it can show the overlay while the menu is in use. */
 struct MenuWatch {
 	WeakPtr<ui::Menu> menu;

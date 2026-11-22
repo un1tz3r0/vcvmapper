@@ -4,6 +4,7 @@
 #include "core/Binding.hpp"
 #include "pin/Layout.hpp"
 #include "marionette/Layout.hpp"
+#include "groups/Layout.hpp"
 #include <cstdio>
 
 using namespace puppeteer;
@@ -320,6 +321,30 @@ static void wideAndSpread() {
 	for (Dummy* d : ds) remove(d);
 }
 
+static void troupeMacros() {
+	Dummy* d = dummy(200);
+	json_t* bindingsJ = json_pack("[o, o]", bindingJ({param(d, 0)}), bindingJ({param(d, 1)}, "overwrite"));
+	Module* t = add(modelTroupe, 201, json_pack("{s:s, s:o}", "name", "Voice: 1*", "bindings", bindingsJ));
+	run();
+	CHECK(near(scaled(d, 0), 0.5f) && near(scaled(d, 1), 0.5f), "macros at zero leave the knobs alone, got %f %f", scaled(d, 0), scaled(d, 1));
+	t->params[troupe::MACRO_PARAM].setValue(0.5f);
+	t->params[troupe::MACRO_PARAM + 1].setValue(-1.f);
+	run();
+	CHECK(near(scaled(d, 0), 0.75f), "macro 1 at +50%% modulates by a quarter of the travel, got %f", scaled(d, 0));
+	CHECK(near(scaled(d, 1), 0.f), "macro 2 overwrites, got %f", scaled(d, 1));
+	json_t* j = t->dataToJson();
+	CHECK(std::string(json_string_value(json_object_get(j, "name"))) == "Voice 1", "the name loses pattern syntax");
+	CHECK(binding(t, 0).locked && binding(t, 3).locked, "macros are locked to the group");
+	json_decref(j);
+	t->params[troupe::MACRO_PARAM].setValue(0.f);
+	run();
+	CHECK(near(scaled(d, 0), 0.5f), "and hand the knob back, got %f", scaled(d, 0));
+	Module* w = add(modelWing, 202, json_object());
+	Module* g = add(modelTag, 203, json_pack("{s:s}", "name", "lead"));
+	run();
+	remove(t); remove(w); remove(g); remove(d);
+}
+
 static void fieldsRoundTrip() {
 	Settings s;
 	for (const Field& f : fields::ALL) {
@@ -350,6 +375,7 @@ int main() {
 	bypassAndPresets();
 	marionette8();
 	wideAndSpread();
+	troupeMacros();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;

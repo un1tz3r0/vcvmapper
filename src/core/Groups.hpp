@@ -8,11 +8,22 @@
 // Where modules sit relative to each other, independent of Rack: groups, ordinals and twins, which scopes are made of.
 namespace puppeteer {
 
+/** What a module does to the groups around it. */
+enum class Role {
+	Plain,
+	Header,   // opens a named group that runs to an End, a gap or the next Header
+	End,      // closes the group it is in
+	TagLeft,  // names the module touching its left side
+	TagRight, // names the module touching its right side
+};
+
 /** One module's place in the rack, in grid units. */
 struct Box {
 	int64_t id;
 	int row, x0, x1;   // x1 is one past the last HP
 	std::string model; // plugin and model slugs, as one key
+	Role role = Role::Plain;
+	std::string name;  // a Header's group name or a tag's name
 };
 
 /** A snapshot of the rack as groups. Boxes keep the caller's order, which must be by row, then left to right. */
@@ -27,14 +38,17 @@ struct Layout {
 	std::vector<int> ordinal; // per box: how many of its model come before it in its group
 	std::vector<Group> groups;
 
-	/** Implicit groups: runs of touching modules. */
+	/** Explicit groups run from a Header to an End, a gap or the next Header; any other run of touching modules is an
+	implicit group. */
 	static Layout of(std::vector<Box> boxes) {
 		Layout l;
 		l.boxes = std::move(boxes);
 		for (size_t i = 0; i < l.boxes.size(); i++) {
 			const Box& b = l.boxes[i];
-			if (i == 0 || b.row != l.boxes[i - 1].row || b.x0 != l.boxes[i - 1].x1)
-				l.groups.push_back({b.row, b.x0, b.x1, ""});
+			const Box* prev = i ? &l.boxes[i - 1] : nullptr;
+			bool touching = prev && b.row == prev->row && b.x0 == prev->x1;
+			if (!touching || b.role == Role::Header || prev->role == Role::End)
+				l.groups.push_back({b.row, b.x0, b.x1, b.role == Role::Header ? b.name : ""});
 			l.groups.back().x1 = b.x1;
 			l.group.push_back(int(l.groups.size()) - 1);
 			int n = 0;
@@ -52,8 +66,27 @@ struct Layout {
 		return -1;
 	}
 
+	/** The modules named by tags matching `name`: each tag's touching neighbour on the side it points to. */
+	std::vector<int> tagged(const std::string& name) const {
+		std::vector<int> out;
+		for (int i = 0; i < int(boxes.size()); i++) {
+			const Box& b = boxes[i];
+			if ((b.role != Role::TagLeft && b.role != Role::TagRight) || b.name.empty() || !glob(name, b.name))
+				continue;
+			int j = b.role == Role::TagLeft ? i - 1 : i + 1;
+			if (j >= 0 && j < int(boxes.size()) && boxes[j].row == b.row
+				&& (j < i ? boxes[j].x1 == b.x0 : boxes[j].x0 == b.x1))
+				out.push_back(j);
+		}
+		std::sort(out.begin(), out.end());
+		out.erase(std::unique(out.begin(), out.end()), out.end());
+		return out;
+	}
+
 	/** Whether box `i` is in `scope` around box `anchor`. Only All admits anything without an anchor. */
 	bool admits(Scope scope, const std::string& names, int anchor, int i) const {
+		if (i < 0)
+			return false;
 		if (scope == Scope::All)
 			return true;
 		if (scope == Scope::Named)

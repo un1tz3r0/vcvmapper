@@ -62,6 +62,7 @@ struct Binding {
 	Settings settings;
 	Selector selector;
 	bool writes = true; // claims params; off for a binding that only reads them
+	bool locked = false; // keeps every target to the owner's group, so a cloned group drives its own copies
 	NVGcolor color = nvgRGB(0x52, 0xdb, 0xff);
 	std::string error;  // why the pattern doesn't parse
 
@@ -76,7 +77,13 @@ struct Binding {
 	void acknowledge();
 
 	// Audio thread
-	void process(const Module::ProcessArgs& args, Input& in, Output& out, float depth = 1.f);
+	void process(const Module::ProcessArgs& args, Input& in, Output& out, float depth = 1.f) {
+		run(args, in.getVoltages(), in.getChannels(), &out, depth);
+	}
+	/** Driven by one voltage that isn't a jack, such as a macro knob. */
+	void process(const Module::ProcessArgs& args, float volts) {
+		run(args, &volts, 1, nullptr, 1.f);
+	}
 	void bypass(const Module::ProcessArgs& args);
 
 	// UI thread
@@ -109,6 +116,7 @@ private:
 	std::map<Key, float> seeds; // hand positions from the patch, for slots that aren't running yet
 
 	Plan* swap(int64_t frame);
+	void run(const Module::ProcessArgs& args, const float* volts, int channels, Output* out, float depth);
 	void drive(Lane& lane, const Plan& plan, float volts, float depth, const Module::ProcessArgs& args);
 	void collect();
 	std::vector<std::pair<Target, bool>> resolve(app::ModuleWidget* owner);

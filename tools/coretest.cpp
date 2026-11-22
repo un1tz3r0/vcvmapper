@@ -61,9 +61,33 @@ static void groups() {
 	CHECK(!l.admits(Scope::Named, "*", 0, 1), "implicit groups have no name");
 }
 
+static void explicitGroups() {
+	// Row 0: Troupe "Voice 1", VCO, VCA, Wing, then a touching VCF outside it; a gap; Troupe "Voice 2", VCO, VCA, a Tag
+	// naming the VCA to its left, then a second Troupe straight after, unnamed, with a VCO.
+	Layout l = Layout::of({
+		{1, 0, 0, 4, "P/Troupe", Role::Header, "Voice 1"}, {2, 0, 4, 14, "VCO"}, {3, 0, 14, 17, "VCA"}, {4, 0, 17, 18, "P/Wing", Role::End},
+		{5, 0, 18, 25, "VCF"},
+		{6, 0, 30, 34, "P/Troupe", Role::Header, "Voice 2"}, {7, 0, 34, 44, "VCO"}, {8, 0, 44, 47, "VCA"}, {9, 0, 47, 49, "P/Tag", Role::TagLeft, "amp"},
+		{10, 0, 49, 53, "P/Troupe", Role::Header, ""}, {11, 0, 53, 63, "VCO"},
+	});
+	CHECK(l.groups.size() == 4, "header, end, gap and header split the row, got %d", (int) l.groups.size());
+	CHECK(l.group[3] == l.group[0] && l.group[4] != l.group[0], "a Wing closes its group, and what touches it starts another");
+	CHECK(l.group[8] == l.group[5] && l.group[9] != l.group[5], "a Troupe ends the group before it");
+	CHECK(l.admits(Scope::Named, "Voice*", 0, 6) && !l.admits(Scope::Named, "Voice*", 0, 10) && !l.admits(Scope::Named, "Voice*", 0, 4),
+		"named scopes reach named groups only");
+	CHECK(l.admits(Scope::Group, "", 5, 7) && !l.admits(Scope::Group, "", 5, 2), "group scope from a Troupe");
+	CHECK(l.twins(1, Scope::Row) == std::vector<int>({1, 6, 10}), "VCO twins across explicit groups");
+	CHECK(l.tagged("amp") == std::vector<int>({7}) && l.tagged("AMP") == std::vector<int>({7}) && l.tagged("lead").empty(), "a tag names its neighbour");
+
+	Layout gap = Layout::of({{1, 0, 0, 10, "VCA"}, {2, 0, 11, 13, "P/Tag", Role::TagLeft, "amp"}, {3, 1, 13, 15, "P/Tag", Role::TagRight, "x"}});
+	CHECK(gap.tagged("amp").empty() && gap.tagged("x").empty(), "a tag with nothing touching that side names nothing");
+	CHECK(cleanName(" Voice: 1, \"lead\"* ") == "Voice 1 lead", "names lose pattern syntax, got '%s'", cleanName(" Voice: 1, \"lead\"* ").c_str());
+}
+
 int main() {
 	patterns();
 	groups();
+	explicitGroups();
 	std::printf(failures ? "%d failed\n" : "all passed\n", failures);
 	return failures != 0;
 }

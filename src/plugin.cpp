@@ -6,4 +6,7 @@ void init(Plugin* p) {
 	pluginInstance = p;
 	p->addModel(modelPin);
 	p->addModel(modelMarionette);
+	p->addModel(modelTroupe);
+	p->addModel(modelWing);
+	p->addModel(modelTag);
 }

@@ -25,11 +25,11 @@ The original plan, with the reasoning behind it, is the "vcvmapper plan" doc; ph
 
 ## 5. Groups and tags
 
-- [ ] Troupe header: name field, group registry entry, "select group" menu item.
-- [ ] Wing end spacer; a group without one ends at the first gap or next header.
-- [ ] Tag: names its left or right neighbour for `$name` clauses.
-- [ ] Named-group scopes (`@Voice*`) and `@group` in the resolver and the path editor's scope menu.
-- [ ] Troupe macros: four knobs with bindings locked to `@group`.
+- [x] Troupe header: name field, group registry entry, "select group" menu item.
+- [x] Wing end spacer; a group without one ends at the first gap or next header.
+- [x] Tag: names its left or right neighbour for `$name` clauses.
+- [x] Named-group scopes (`@Voice*`) and `@group` in the resolver and the path editor's scope menu.
+- [x] Troupe macros: four knobs with bindings locked to `@group`.
 - [ ] In Rack: clone a group with Rack's selection clone and confirm the copy's macros drive the copy.
 
 ## 6. Tether
