@@ -49,18 +49,25 @@ std::string itemName(Module* m, bool light, int index) {
 	return index < (int) m->paramQuantities.size() ? m->paramQuantities[index]->name : "";
 }
 
-std::vector<Target> match(Clause c, const Snapshot& s, bool locked) {
+std::vector<Target> match(Clause c, const Snapshot& s, bool locked, const std::vector<int64_t>& cabled) {
 	std::vector<Target> out;
 	if (locked)
 		c.scope = Scope::Group;
-	// Cords arrive with the module that has selecting jacks.
-	if (c.scope == Scope::Cable)
-		return out;
+	bool cable = c.scope == Scope::Cable;
+	std::vector<int> order;
+	if (cable) {
+		for (int64_t id : cabled)
+			if (int i = s.find(id); i >= 0)
+				order.push_back(i);
+	}
+	else
+		for (int i = 0; i < int(s.modules.size()); i++)
+			order.push_back(i);
 	std::vector<int> tagged = c.tag.empty() ? std::vector<int>() : s.layout.tagged(c.tag);
-	for (int i = 0; i < int(s.modules.size()); i++) {
+	for (int i : order) {
 		Module* m = s.modules[i]->module;
 		bool named = c.tag.empty() ? matchModule(c, s.modules[i]->model) : std::count(tagged.begin(), tagged.end(), i);
-		if (i == s.owner || !named || !s.layout.admits(c.scope, c.groups, s.owner, i))
+		if (i == s.owner || !named || !(cable || s.layout.admits(c.scope, c.groups, s.owner, i)))
 			continue;
 		Target t;
 		t.kind = c.light ? Kind::Light : Kind::Param;
@@ -87,6 +94,24 @@ std::vector<Target> twins(const Target& t, Twins scope, const Snapshot& s) {
 		out.push_back(u);
 	}
 	return out;
+}
+
+Target grip(const Target& g, Module* m, std::string& missing) {
+	if (!m)
+		return {};
+	Target t = g;
+	t.moduleId = m->id;
+	t.plugin = m->model && m->model->plugin ? m->model->plugin->slug : "";
+	t.model = m->model ? m->model->slug : "";
+	bool light = g.kind == Kind::Light;
+	int count = light ? (int) m->lights.size() : (int) m->paramQuantities.size();
+	if (t.plugin == g.plugin && t.model == g.model && g.index < count)
+		return t;
+	for (t.index = 0; t.index < count && !g.name.empty(); t.index++)
+		if (string::lowercase(itemName(m, light, t.index)) == string::lowercase(g.name))
+			return t;
+	missing = (m->model ? m->model->name : "Its module") + " has no " + (g.name.empty() ? "#" + std::to_string(g.index) : g.name);
+	return {};
 }
 
 } // namespace puppeteer

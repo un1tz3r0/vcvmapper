@@ -8,6 +8,8 @@
 #include "core/Settings.hpp"
 #include "marionette/View.hpp"
 #include "groups/View.hpp"
+#include "tether/Layout.hpp"
+#include "tether/View.hpp"
 #include "PanelSvg.hpp"
 #include "SvgPainter.hpp"
 
@@ -97,6 +99,14 @@ static void groupMockups(bool dark, int accent, const std::string& rackDir) {
 	write("wing" + suffix, wing::panel(), dark, accent, rackDir, [](Painter&, const Theme&) {});
 }
 
+static void tetherMockup(bool dark, int accent, const std::string& rackDir) {
+	tether::ViewState s{"VCF", "Resonance", "0.62 x2", false, 0.62f, 0.5f};
+	if (dark)
+		s = {"VCO", "NO Resonance", "MOVE THE CORD", true};
+	write(dark ? "tether-dark.svg" : "tether-light.svg", tether::panel(), dark, accent, rackDir,
+		[&](Painter& p, const Theme& theme) { tether::paint(p, theme, s); });
+}
+
 int main(int argc, char** argv) {
 	const std::string rack = argc > 1 ? argv[1] : "";
 	pinMockup("pin-light.svg", false, 0, rack);
@@ -105,4 +115,6 @@ int main(int argc, char** argv) {
 	marionetteMockup("marionette-dark.svg", true, 3, true, rack);
 	groupMockups(false, 0, rack);
 	groupMockups(true, 2, rack);
+	tetherMockup(false, 0, rack);
+	tetherMockup(true, 3, rack);
 }
