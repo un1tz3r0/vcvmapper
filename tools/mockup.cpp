@@ -11,6 +11,7 @@
 #include "tether/Layout.hpp"
 #include "tether/View.hpp"
 #include "stage/View.hpp"
+#include "poses/View.hpp"
 #include "PanelSvg.hpp"
 #include "SvgPainter.hpp"
 
@@ -156,6 +157,18 @@ static void stageMockup(bool dark, int accent, const std::string& rackDir) {
 	write(dark ? "stage-dark.svg" : "stage-light.svg", panel(), dark, accent, rackDir, [&](Painter& p, const Theme& theme) { paint(p, theme, s); });
 }
 
+static void posesMockup(bool dark, int accent, const std::string& rackDir) {
+	poses::ViewState s;
+	const int counts[] = {12, 12, 12, 9, 0, 12, 0, 0, 4, 0, 0, 0, 0, 0, 0, 12};
+	std::copy(std::begin(counts), std::end(counts), s.counts);
+	s.selected = 3, s.a = 0, s.b = 5, s.fade = 0.35f;
+	s.line = "VCF: 12 TARGETS";
+	if (dark)
+		s.muteA = true, s.line = "CAPTURE INTO WHICH POSE?", s.alert = true;
+	write(dark ? "poses-dark.svg" : "poses-light.svg", poses::panel(), dark, accent, rackDir,
+		[&](Painter& p, const Theme& theme) { poses::paint(p, theme, s); });
+}
+
 int main(int argc, char** argv) {
 	const std::string rack = argc > 1 ? argv[1] : "";
 	pinMockup("pin-light.svg", false, 0, rack);
@@ -168,6 +181,8 @@ int main(int argc, char** argv) {
 	tetherMockup(true, 3, rack);
 	stageMockup(false, 0, rack);
 	stageMockup(true, 2, rack);
+	posesMockup(false, 1, rack);
+	posesMockup(true, 3, rack);
 	for (bool dark : {false, true})
 		write(dark ? "crew-dark.svg" : "crew-light.svg", crew::panel(), dark, 0, rack,
 			[](Painter& p, const Theme& theme) { p.label({p.width / 2, p.height / 2}, "CREW A", 8, theme.field); });

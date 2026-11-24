@@ -128,7 +128,7 @@ Both capture sets of controls, and a path already names a set: `*@group:*` is "t
 **capture set**, a `Selector` like any binding's (learned targets, twins, paths, tags, cords), resolved to lanes the
 same way. What changes is where a lane's value comes from: a binding's lanes share one CV pushed through one shape,
 while these lanes each carry their own value. The core gains that as a second way to drive a plan,
-`Binding::process(args, const float* values)`, one value 0..1 per lane, written as an overwrite while the module is
+`Binding::place(args, value)`, which asks for one value 0..1 per lane, written as an overwrite while the module is
 playing and let go (back to the hand) when it stops. Hand, CV bindings and playback then meet in the same slot, with
 the existing rules: an overwrite wins while it runs, modulation adds around it.
 

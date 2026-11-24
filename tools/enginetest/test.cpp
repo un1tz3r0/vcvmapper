@@ -7,6 +7,7 @@
 #include "groups/Layout.hpp"
 #include "tether/Layout.hpp"
 #include "stage/Layout.hpp"
+#include "poses/Layout.hpp"
 #include <cstdio>
 
 using namespace puppeteer;
@@ -399,6 +400,58 @@ static void tetherCords() {
 	remove(t); remove(same); remove(other); remove(learned);
 }
 
+static void posesFade() {
+	Dummy* d = dummy(500);
+	Module* m = add(modelPoses, 501, json_pack("{s:o}", "binding", bindingJ({param(d, 0), param(d, 1), param(d, 2), param(d, 3)})));
+	auto tend = [&] { for (int i = 0; i < 3; i++) { binding(m).update(nullptr); dynamic_cast<BindingHost*>(m)->tend(); run(64); } };
+	auto tap = [&](int id) { m->params[id].setValue(1.f); run(64); m->params[id].setValue(0.f); run(64); };
+	auto set = [&](float x, float y, float sw) {
+		d->paramQuantities[0]->setScaledValue(x); d->paramQuantities[1]->setScaledValue(y); d->paramQuantities[2]->setValue(sw); run();
+	};
+	auto check = [&](float x, float y, float sw, const char* what) {
+		CHECK(near(scaled(d, 0), x) && near(scaled(d, 1), y) && d->params[2].getValue() == sw, "%s: want %g %g %g, got %f %f %g",
+			what, x, y, sw, scaled(d, 0), scaled(d, 1), d->params[2].getValue());
+	};
+	tend();
+	set(0.2f, 0.8f, 0.f);
+	tap(poses::CAPTURE_PARAM); tap(poses::POSE_PARAM + 0); tend();
+	set(0.6f, 0.4f, 2.f);
+	tap(poses::CAPTURE_PARAM); tap(poses::POSE_PARAM + 1); tend();
+	json_t* j = m->dataToJson();
+	CHECK(json_array_size(json_array_get(json_object_get(j, "poses"), 1)) == 4, "captured into pose 2");
+	json_decref(j);
+
+	// Holding an end while pressing a pose picks it, without muting it on release.
+	m->params[poses::A_PARAM].setValue(1.f); run(64); tap(poses::POSE_PARAM + 0); m->params[poses::A_PARAM].setValue(0.f); run(64);
+	m->params[poses::B_PARAM].setValue(1.f); run(64); tap(poses::POSE_PARAM + 1); m->params[poses::B_PARAM].setValue(0.f); run();
+	check(0.2f, 0.8f, 0.f, "the fader at A");
+	m->params[poses::FADE_PARAM].setValue(0.25f); run();
+	check(0.3f, 0.7f, 0.f, "a quarter of the way to B, the switch still on A's side");
+	cv(m, {5.f}, poses::FADE_INPUT); run();
+	check(0.5f, 0.5f, 2.f, "CV adds to the fader");
+	cv(m, {0.f}, poses::FADE_INPUT); unplug(m, poses::FADE_INPUT); run(int(E->getSampleRate()));
+
+	// Muted, A stands for the controls as the fader found them, or as the hand has left them since.
+	d->paramQuantities[0]->setScaledValue(0.9f); run();
+	tap(poses::A_PARAM);
+	m->params[poses::FADE_PARAM].setValue(0.f); run();
+	check(0.9f, 0.4f, 2.f, "muted A is the hand's new 0.9 and the 0.4 from before the fader took hold");
+	m->params[poses::FADE_PARAM].setValue(1.f); run();
+	check(0.6f, 0.4f, 2.f, "and B is still B");
+	run(int(E->getSampleRate()));
+
+	// Recall glides over GLIDE, then lets go.
+	m->params[poses::GLIDE_PARAM].setValue(std::log(101.f) / std::log(1000.f)); // one second
+	tap(poses::POSE_PARAM + 0);
+	run(int(E->getSampleRate() / 2) - 128);
+	CHECK(near(scaled(d, 0), 0.4f, 0.02f), "halfway through a one second glide from 0.6 to 0.2, got %f", scaled(d, 0));
+	run(int(E->getSampleRate()));
+	check(0.2f, 0.8f, 0.f, "recalled");
+	d->paramQuantities[0]->setScaledValue(0.5f); run();
+	CHECK(near(scaled(d, 0), 0.5f), "and let go, got %f", scaled(d, 0));
+	remove(m); remove(d);
+}
+
 static void stagePool() {
 	Dummy* d = dummy(400);
 	json_t* bindingsJ = json_array();
@@ -481,6 +534,7 @@ int main() {
 	troupeMacros();
 	tetherCords();
 	stagePool();
+	posesFade();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;

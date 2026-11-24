@@ -182,15 +182,8 @@ void Binding::drive(Lane& l, const Plan& p, float volts, float depth, const Modu
 			c.stamp.store(args.frame, std::memory_order_relaxed);
 		}
 	}
-	else if (std::isnan(volts)) {
-		if (l.live) {
-			l.live = false;
-			l.lag = {};
-			l.rate = {};
-			l.sent = NAN;
-			c.state.store(Cell::IDLE, std::memory_order_relaxed);
-		}
-	}
+	else if (std::isnan(volts))
+		letGo(l);
 	else {
 		float x = l.lag.process(s.shape.forward(volts), s.slew, args.sampleTime);
 		float y = p.rest + depth * s.depth * (x - p.rest);
@@ -203,6 +196,33 @@ void Binding::drive(Lane& l, const Plan& p, float volts, float depth, const Modu
 		c.interval.store(s.autoRate && l.rate.process(volts, args.sampleTime) ? 1 : s.interval, std::memory_order_relaxed);
 		c.state.store(s.mode == Mode::Modulate ? Cell::MODULATE : s.mode == Mode::Overwrite ? Cell::ABSOLUTE : Cell::PICKUP,
 			std::memory_order_relaxed);
+		l.live = true;
+	}
+	l.lease.slot->tick(args.frame);
+}
+
+void Binding::letGo(Lane& l) {
+	if (!l.live)
+		return;
+	l.live = false;
+	l.lag = {};
+	l.rate = {};
+	l.sent = NAN;
+	(*l.lease).state.store(Cell::IDLE, std::memory_order_relaxed);
+}
+
+void Binding::set(Lane& l, const Plan& p, float value, const Module::ProcessArgs& args) {
+	Cell& c = *l.lease;
+	if (std::isnan(value))
+		letGo(l);
+	else {
+		if (value != l.sent) {
+			l.sent = value;
+			c.stamp.store(args.frame, std::memory_order_relaxed);
+		}
+		c.value.store(value, std::memory_order_relaxed);
+		c.interval.store(p.settings.interval, std::memory_order_relaxed);
+		c.state.store(Cell::ABSOLUTE, std::memory_order_relaxed);
 		l.live = true;
 	}
 	l.lease.slot->tick(args.frame);
@@ -283,6 +303,7 @@ std::vector<std::pair<Target, bool>> Binding::resolve(app::ModuleWidget* owner) 
 
 Plan* Binding::build(const std::vector<std::pair<Target, bool>>& resolved) {
 	Plan* p = new Plan;
+	p->serial = ++serials;
 	p->settings = settings;
 	p->rest = settings.shape.forward(0.f);
 	std::map<Key, Lease> kept;
@@ -293,6 +314,9 @@ Plan* Binding::build(const std::vector<std::pair<Target, bool>>& resolved) {
 		p->count++;
 		l.target = r.first;
 		l.momentary = r.second;
+		Module* m = APP->engine->getModule_NoLock(l.target.moduleId);
+		ParamQuantity* pq = m && l.target.kind == Kind::Param && l.target.index < (int) m->paramQuantities.size() ? m->paramQuantities[l.target.index] : nullptr;
+		l.snap = pq && pq->snapEnabled;
 		if (!writes || l.target.kind != Kind::Param)
 			continue;
 		Key key = l.target.key();

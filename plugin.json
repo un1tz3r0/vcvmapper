@@ -1,7 +1,7 @@
 {
   "slug": "Puppeteer",
   "name": "Puppeteer",
-  "version": "2.3.4",
+  "version": "2.3.5",
   "license": "MIT",
   "brand": "un1tz3r0",
   "author": "Victor Michael Ondras-Condino",
@@ -60,6 +60,12 @@
       "name": "Crew",
       "description": "Eight more inputs and readback outputs for the Stage to its left; up to three chain on.",
       "tags": ["Utility", "Expander"]
+    },
+    {
+      "slug": "Poses",
+      "name": "Poses",
+      "description": "Captures a set of controls as 16 poses, recalls them with a glide and crossfades between two, either end muteable.",
+      "tags": ["Utility", "Controller"]
     }
   ]
 }
