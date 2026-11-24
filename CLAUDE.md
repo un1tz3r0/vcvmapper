@@ -17,8 +17,15 @@ anything under `src/` or `res/`, `plugin.json`, the `Makefile`, or the license. 
 
 For example, 2.2.0 → a fix → 2.2.1 → phase 3 completed → 2.3.0.
 
-**Milestones and stable releases** don't get a number. Celebrate one with a tag `vX.Y.Z` on the commit with that version
-and a GitHub release named after the milestone, as numbered in `TODO.md`.
+Every PR that changes the compiled plugin must bump the version, because merging it is what releases it:
+`.github/workflows/release.yml` sees the new version land on main, tags it `vX.Y.Z` and publishes a GitHub release
+with the four `.vcvplugin` packages. It reuses the PR's own Build artifacts when that run built exactly what was merged
+(the PR was up to date with main, or main didn't move after the run), and otherwise waits for main's Build run of the
+merge. Don't tag versions by hand. Two open PRs that both bump will conflict on `plugin.json`; the second rebases
+and bumps again.
+
+**Milestones and stable releases** don't get a number. Celebrate one by renaming the automatic release of that version
+after the milestone, as numbered in `TODO.md`.
 
 The leading 2 never changes. Rack 2 refuses to load a plugin whose version doesn't start with its own major version
 (`src/plugin/Plugin.cpp` in Rack). Three parts keep it in the usual MAJOR.MINOR.REVISION form.
