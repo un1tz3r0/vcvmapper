@@ -36,6 +36,8 @@ Everything Pin's menu offers (more targets, paths, twins, shape, timing) is in t
 - **Wing** (1 HP) closes a group.
 - **Tag** (2 HP) names the module touching it, on the side **SIDE** picks, so `$lead:Freq` reaches that module wherever it moves. Inside a Troupe's macros a tag means the tagged module in that group.
 
+**Tether** (4 HP) picks its target by cord. Patch **THRU** into any input of the module you want to drive, press **LEARN** and touch the control: the cord now names the module and the learned control names what to move on it. Move the cord and the binding follows, finding the same control on a module of the same model, or one with the same name on any other; when there is none the screen says what is missing. **IN** passes through to **THRU**, so Tether can sit in a cable that is already there, and with **THRU** unpatched the module feeding **IN** is the target instead. **CV** drives the target, or **IN** does when **CV** is unpatched. Stack several cables on **THRU** for one target per cable, following the CV's channels. A path with `@cable`, such as `*@cable:Freq*`, also reaches only the modules on the cords.
+
 ## Building
 
 ```sh

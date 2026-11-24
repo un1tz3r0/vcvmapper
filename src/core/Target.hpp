@@ -15,6 +15,7 @@ struct Target {
 	int index = 0;
 	std::string plugin, model;
 	math::Vec offset;
+	std::string name; // the param's or light's name when learned, for finding it on another model
 
 	explicit operator bool() const {
 		return kind != Kind::None;

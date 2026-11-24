@@ -11,6 +11,8 @@ json_t* Target::toJson() const {
 	json_object_set_new(rootJ, "plugin", json_string(plugin.c_str()));
 	json_object_set_new(rootJ, "model", json_string(model.c_str()));
 	json_object_set_new(rootJ, "offset", json_pack("[f, f]", offset.x, offset.y));
+	if (!name.empty())
+		json_object_set_new(rootJ, "name", json_string(name.c_str()));
 	return rootJ;
 }
 
@@ -28,6 +30,7 @@ Target Target::fromJson(json_t* rootJ) {
 	t.index = json_integer_value(json_object_get(rootJ, "index"));
 	t.plugin = str("plugin");
 	t.model = str("model");
+	t.name = str("name");
 	double x = 0, y = 0;
 	json_unpack(json_object_get(rootJ, "offset"), "[F, F]", &x, &y);
 	t.offset = Vec(x, y);

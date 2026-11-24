@@ -50,10 +50,13 @@ json_t* Selector::toJson() const {
 	json_t* targetsJ = json_array();
 	for (const Target& t : targets)
 		json_array_append_new(targetsJ, t.toJson());
+	json_t* gripsJ = json_array();
+	for (const Target& t : grips)
+		json_array_append_new(gripsJ, t.toJson());
 	json_t* excludedJ = json_array();
 	for (const Target& t : excluded)
 		json_array_append_new(excludedJ, t.toJson());
-	return json_pack("{s:o, s:s, s:o}", "targets", targetsJ, "pattern", pattern.c_str(), "excluded", excludedJ);
+	return json_pack("{s:o, s:o, s:s, s:o}", "targets", targetsJ, "grips", gripsJ, "pattern", pattern.c_str(), "excluded", excludedJ);
 }
 
 Selector Selector::fromJson(json_t* rootJ) {
@@ -66,6 +69,7 @@ Selector Selector::fromJson(json_t* rootJ) {
 				out.push_back(t);
 	};
 	list("targets", s.targets);
+	list("grips", s.grips);
 	list("excluded", s.excluded);
 	if (const char* p = json_string_value(json_object_get(rootJ, "pattern")))
 		s.pattern = p;
@@ -250,22 +254,29 @@ std::vector<std::pair<Target, bool>> Binding::resolve(app::ModuleWidget* owner) 
 	};
 	std::vector<Clause> clauses = Clause::parseAll(selector.pattern, error);
 	// Twins and patterns need the rack's widgets, which a loading patch doesn't have yet: they follow on the first
-	// update. Plain learned targets skip the rack altogether.
-	if (!owner || (!locked && settings.twins == Twins::None && clauses.empty())) {
-		for (const Target& t : selector.targets)
-			add(t);
-		return out;
-	}
-	Snapshot snapshot = Snapshot::take(owner);
+	// update. Plain learned targets and grips skip the rack altogether.
+	bool rack = owner && (locked || settings.twins != Twins::None || !clauses.empty());
+	Snapshot snapshot = rack ? Snapshot::take(owner) : Snapshot();
 	auto inGroup = [&](const Target& t) {
 		return !locked || snapshot.layout.admits(Scope::Group, "", snapshot.owner, snapshot.find(t.moduleId));
 	};
-	for (const Target& t : selector.targets)
-		for (const Target& u : twins(t, locked ? Twins::None : settings.twins, snapshot))
-			if (inGroup(u))
-				add(u);
+	for (const Target& t : selector.targets) {
+		if (!rack)
+			add(t);
+		else
+			for (const Target& u : twins(t, locked ? Twins::None : settings.twins, snapshot))
+				if (inGroup(u))
+					add(u);
+	}
+	missing.clear();
+	for (const Target& g : selector.grips)
+		for (int64_t id : cabled) {
+			Target t = grip(g, APP->engine->getModule_NoLock(id), missing);
+			if (t && (!owner || t.moduleId != owner->module->id))
+				add(t);
+		}
 	for (const Clause& c : clauses)
-		for (const Target& t : match(c, snapshot, locked))
+		for (const Target& t : match(c, snapshot, locked, cabled))
 			add(t);
 	return out;
 }

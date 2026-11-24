@@ -5,6 +5,7 @@
 #include "pin/Layout.hpp"
 #include "marionette/Layout.hpp"
 #include "groups/Layout.hpp"
+#include "tether/Layout.hpp"
 #include <cstdio>
 
 using namespace puppeteer;
@@ -345,6 +346,58 @@ static void troupeMacros() {
 	remove(t); remove(w); remove(g); remove(d);
 }
 
+struct Other : Module {
+	Other() {
+		config(2, 0, 0, 0);
+		configParam(0, 0.f, 1.f, 0.5f, "Resonance");
+		configParam(1, 0.f, 1.f, 0.5f, "FREQ");
+	}
+};
+
+static void tetherCords() {
+	static plugin::Model a, b;
+	a.slug = "A";
+	b.slug = "B";
+	b.name = "Other";
+	Dummy* same = dummy(300);
+	same->model = &a;
+	auto* other = new Other;
+	other->id = 301;
+	other->model = &b;
+	E->addModule(other);
+	Dummy* learned = dummy(302); // where Freq was learned; no cord reaches it
+	learned->model = &a;
+	Selector sel;
+	Target g = param(learned, 0);
+	g.model = "A";
+	g.name = "Freq";
+	sel.grips = {g};
+	Module* t = add(modelTether, 303, json_pack("{s:{s:{s:s}, s:o}}", "binding", "settings", "mode", "overwrite", "selector", sel.toJson()));
+	auto cord = [&](std::vector<int64_t> ids) { binding(t).cabled = ids; binding(t).changed(); uiSteps(t); };
+
+	cord({});
+	CHECK(!binding(t).plan() || binding(t).plan()->count == 0, "no cord, no target");
+	cord({same->id});
+	cv(t, {1.f, -2.f}, tether::IN_INPUT); run();
+	CHECK(near(scaled(same, 0), 0.6f), "same model by id, driven by IN while CV is unpatched, got %f", scaled(same, 0));
+	CHECK(t->outputs[tether::THRU_OUTPUT].getChannels() == 2 && near(t->outputs[tether::THRU_OUTPUT].getVoltage(1), -2.f), "THRU copies IN");
+	cv(t, {-5.f}, tether::CV_INPUT); run();
+	CHECK(near(scaled(same, 0), 0.f), "CV wins over IN, got %f", scaled(same, 0));
+	cord({other->id, same->id});
+	cv(t, {0.f}, tether::CV_INPUT); run();
+	CHECK(binding(t).plan()->count == 2 && near(scaled(other, 1), 0.5f) && near(scaled(other, 0), 0.5f) && near(scaled(same, 0), 0.5f),
+		"another model by name, one lane per cord, got %f %f", scaled(other, 1), scaled(same, 0));
+	cv(t, {5.f}, tether::CV_INPUT); run();
+	CHECK(near(scaled(other, 1), 1.f) && near(scaled(other, 0), 0.5f), "the name match is the one driven, got %f", scaled(other, 1));
+
+	g.name = "Cutoff";
+	binding(t).selector.grips = {g};
+	cord({other->id});
+	CHECK(binding(t).plan()->count == 0 && binding(t).missing == "Other has no Cutoff", "a miss says why: '%s'", binding(t).missing.c_str());
+	unplug(t, tether::CV_INPUT); unplug(t, tether::IN_INPUT);
+	remove(t); remove(same); remove(other); remove(learned);
+}
+
 static void fieldsRoundTrip() {
 	Settings s;
 	for (const Field& f : fields::ALL) {
@@ -376,6 +429,7 @@ int main() {
 	marionette8();
 	wideAndSpread();
 	troupeMacros();
+	tetherCords();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;

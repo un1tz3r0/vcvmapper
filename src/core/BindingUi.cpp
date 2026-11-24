@@ -229,15 +229,22 @@ static void appendClauseMenu(ui::Menu* menu, Binding* b, Module* m, int index, i
 	Snapshot snap = Snapshot::take(widgetOf(m->id));
 	bool locked = b->locked;
 	Scope scope = locked ? Scope::Group : c.scope;
-	auto count = [=](Clause k) { return std::to_string(match(k, snap, locked).size()); };
+	std::vector<int64_t> cabled = b->cabled;
+	auto count = [=](Clause k) { return std::to_string(match(k, snap, locked, cabled).size()); };
+	// Whether module i is somewhere this clause's scope reaches.
+	auto reaches = [=](const Clause& k, int i) {
+		return k.scope == Scope::Cable && !locked ? std::count(cabled.begin(), cabled.end(), snap.layout.boxes[i].id) > 0
+			: snap.layout.admits(scope, k.groups, snap.owner, i);
+	};
 	menu->addChild(new ui::MenuSeparator);
 
 	if (locked)
 		menu->addChild(createMenuLabel("Where: this group only"));
 	else
 		menu->addChild(createSubmenuItem("Where", c.scopeText(), [=](ui::Menu* sub) {
-			static const char* WHERE[] = {"Anywhere", "On this module's row", "Above and below this module", "In this module's group"};
-			for (int i = 0; i < 4; i++) {
+			static const char* WHERE[] = {"Anywhere", "On this module's row", "Above and below this module", "In this module's group",
+				"At the end of its cords"};
+			for (int i = 0; i < (b->corded ? 5 : 4); i++) {
 				Clause k = c;
 				k.scope = Scope(i);
 				sub->addChild(createCheckMenuItem(WHERE[i], count(k), [=] { return c.scope == Scope(i); },
@@ -271,7 +278,7 @@ static void appendClauseMenu(ui::Menu* menu, Binding* b, Module* m, int index, i
 	auto instances = [=](Clause k) {
 		int n = 0;
 		for (int i = 0; i < (int) snap.modules.size(); i++)
-			n += i != snap.owner && snap.layout.admits(scope, k.groups, snap.owner, i) && matchModule(k, snap.modules[i]->model);
+			n += i != snap.owner && reaches(k, i) && matchModule(k, snap.modules[i]->model);
 		return std::to_string(n);
 	};
 	menu->addChild(createSubmenuItem("Plugin", c.plugin, [=](ui::Menu* sub) {
@@ -312,7 +319,7 @@ static void appendClauseMenu(ui::Menu* menu, Binding* b, Module* m, int index, i
 		std::map<int, Item> items;
 		for (int i = 0; i < (int) snap.modules.size(); i++) {
 			Module* mod = snap.modules[i]->module;
-			if (i == snap.owner || !snap.layout.admits(scope, c.groups, snap.owner, i) || !matchModule(c, snap.modules[i]->model))
+			if (i == snap.owner || !reaches(c, i) || !matchModule(c, snap.modules[i]->model))
 				continue;
 			int n = c.light ? (int) mod->lights.size() : (int) mod->paramQuantities.size();
 			std::map<std::string, int> seen;
@@ -411,7 +418,7 @@ void appendPathMenu(ui::Menu* menu, Module* m, int index) {
 	menu->addChild(new ui::MenuSeparator);
 	menu->addChild(createMenuLabel("plugin/model@where:control, comma between several"));
 	menu->addChild(createMenuLabel("* and ? match any text; #3 or #0-7 are ids"));
-	menu->addChild(createMenuLabel("where: row, column, group, or a group name"));
+	menu->addChild(createMenuLabel(b->corded ? "where: row, column, group, cable, or a group name" : "where: row, column, group, or a group name"));
 	menu->addChild(createMenuLabel("$name:control is the module a Tag names"));
 	menu->addChild(createMenuLabel("light:name or light:#N reads lights"));
 }

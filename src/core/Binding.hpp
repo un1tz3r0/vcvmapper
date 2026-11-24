@@ -11,15 +11,18 @@ namespace puppeteer {
 
 constexpr int MAX_LANES = 64;
 
-/** What a binding points at: learned targets in learn order, each with its twins, then whatever the pattern matches
-from left to right and top to bottom, minus the targets someone unmapped from the knob. At most MAX_LANES. */
+/** What a binding points at: learned targets in learn order, each with its twins, then grips on the modules at the
+end of the owner's cords, then whatever the pattern matches from left to right and top to bottom, minus the targets
+someone unmapped from the knob. At most MAX_LANES. */
 struct Selector {
 	std::vector<Target> targets;
+	/** Controls learned for whatever module a cord reaches: the same id on the learned model, else the same name. */
+	std::vector<Target> grips;
 	std::string pattern;
 	std::vector<Target> excluded;
 
 	bool empty() const {
-		return targets.empty() && pattern.empty();
+		return targets.empty() && grips.empty() && pattern.empty();
 	}
 	json_t* toJson() const;
 	static Selector fromJson(json_t* rootJ);
@@ -65,6 +68,9 @@ struct Binding {
 	bool locked = false; // keeps every target to the owner's group, so a cloned group drives its own copies
 	NVGcolor color = nvgRGB(0x52, 0xdb, 0xff);
 	std::string error;  // why the pattern doesn't parse
+	std::string missing; // a grip that a cord's module has no match for, as "VCF has no Resonance"
+	bool corded = false; // the owner has selecting jacks, so @cable means something
+	std::vector<int64_t> cabled; // the modules at the end of the owner's selecting cords, for grips and @cable
 
 	~Binding();
 
@@ -79,6 +85,10 @@ struct Binding {
 	// Audio thread
 	void process(const Module::ProcessArgs& args, Input& in, Output& out, float depth = 1.f) {
 		run(args, in.getVoltages(), in.getChannels(), &out, depth);
+	}
+	/** Without an output reading the targets back. */
+	void process(const Module::ProcessArgs& args, Input& in, float depth) {
+		run(args, in.getVoltages(), in.getChannels(), nullptr, depth);
 	}
 	/** Driven by one voltage that isn't a jack, such as a macro knob. */
 	void process(const Module::ProcessArgs& args, float volts) {

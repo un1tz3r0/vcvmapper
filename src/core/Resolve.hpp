@@ -31,8 +31,12 @@ struct Snapshot {
 bool matchModule(const Clause& c, plugin::Model* model);
 /** The param's or light's name on `m`, empty when it has none. */
 std::string itemName(Module* m, bool light, int index);
-/** What the clause matches, in rack order, skipping the owner. `locked` keeps it to the owner's group. */
-std::vector<Target> match(Clause c, const Snapshot& s, bool locked = false);
+/** What the clause matches, in rack order, skipping the owner. `locked` keeps it to the owner's group, and `cabled`
+lists the modules an @cable clause may reach, in cord order. */
+std::vector<Target> match(Clause c, const Snapshot& s, bool locked = false, const std::vector<int64_t>& cabled = {});
+/** Grip `g` found on `m`: the same id on the learned model, else the item with the same name. When there is none,
+an empty target, with `missing` saying so. */
+Target grip(const Target& g, Module* m, std::string& missing);
 /** `t` and its twins, in rack order; just `t` when its module isn't in the snapshot. */
 std::vector<Target> twins(const Target& t, Twins scope, const Snapshot& s);
 

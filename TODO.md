@@ -34,9 +34,9 @@ The original plan, with the reasoning behind it, is the "vcvmapper plan" doc; ph
 
 ## 6. Tether
 
-- [ ] Module with `IN`, `THRU`, `CV`, depth and a one-line screen; poly pass-through.
-- [ ] `cable` scope from `onPortChange` and `getCompleteCablesOnPort`; `THRU` side wins, stacked cables become lanes.
-- [ ] Learn that survives re-patching: same model by id, other models by name, unbound with a reason otherwise.
+- [x] Module with `IN`, `THRU`, `CV`, depth and a one-line screen; poly pass-through.
+- [x] `cable` scope from `onPortChange` and `getCompleteCablesOnPort`; `THRU` side wins, stacked cables become lanes.
+- [x] Learn that survives re-patching: same model by id, other models by name, unbound with a reason otherwise.
 - [ ] In Rack: move the cord between modules of the same and different models, in both directions.
 
 ## 7. Stage, the hub
