@@ -6,6 +6,7 @@
 #include "marionette/Layout.hpp"
 #include "groups/Layout.hpp"
 #include "tether/Layout.hpp"
+#include "stage/Layout.hpp"
 #include <cstdio>
 
 using namespace puppeteer;
@@ -398,6 +399,55 @@ static void tetherCords() {
 	remove(t); remove(same); remove(other); remove(learned);
 }
 
+static void stagePool() {
+	Dummy* d = dummy(400);
+	json_t* bindingsJ = json_array();
+	auto entry = [&](int source, json_t* bJ) { json_array_append_new(bindingsJ, json_pack("{s:i, s:o}", "source", source, "binding", bJ)); };
+	entry(2, bindingJ({param(d, 0)}));               // IN3
+	entry(2, bindingJ({param(d, 1)}, "overwrite"));  // IN3 again, no readback
+	entry(stage::MACRO_SOURCE + 4, bindingJ({param(d, 2)}, "overwrite")); // M5
+	entry(-1, bindingJ({param(d, 3)}));              // no source
+	Module* s = add(modelStage, 401, json_pack("{s:o, s:[f, f, f, f, f]}", "bindings", bindingsJ, "macros", 0.0, 0.0, 0.0, 0.0, -1.0));
+	cv(s, {2.5f}, stage::CV_INPUT + 2); run();
+	CHECK(near(scaled(d, 0), 0.75f) && near(scaled(d, 1), 0.75f), "two bindings share IN3, got %f %f", scaled(d, 0), scaled(d, 1));
+	CHECK(near(s->outputs[stage::CV_OUTPUT + 2].getVoltage(), 2.5f), "OUT3 reads back the first, got %f", s->outputs[stage::CV_OUTPUT + 2].getVoltage());
+	CHECK(near(d->params[2].getValue(), 0.f), "M5 at -100%% overwrites the switch to its bottom, got %f", d->params[2].getValue());
+	json_t* j = s->dataToJson();
+	CHECK(json_integer_value(json_object_get(json_array_get(json_object_get(j, "bindings"), 2), "source")) == stage::MACRO_SOURCE + 4, "sources save");
+	CHECK(json_integer_value(json_object_get(json_array_get(json_object_get(j, "bindings"), 4), "source")) == 4, "unused bindings default to their own jack");
+	CHECK(json_number_value(json_array_get(json_object_get(j, "macros"), 4)) == -1.0, "macros save");
+	json_decref(j);
+	unplug(s, stage::CV_INPUT + 2); run();
+	CHECK(near(scaled(d, 0), 0.5f), "unplugging hands IN3's knob back, got %f", scaled(d, 0));
+
+	// Crews chain to the right: B's third input is source 8 * 2 + 2.
+	Module* a = add(modelCrew, 402, json_object());
+	Module* b = add(modelCrew, 403, json_object());
+	s->rightExpander.moduleId = a->id;
+	a->leftExpander.moduleId = s->id;
+	a->rightExpander.moduleId = b->id;
+	b->leftExpander.moduleId = a->id;
+	binding(s, 0).selector = Selector();
+	binding(s, 0).changed();
+	binding(s, 5).fromJson(bindingJ({param(d, 0)}), s);
+	json_t* sJ = s->dataToJson();
+	json_integer_set(json_object_get(json_array_get(json_object_get(sJ, "bindings"), 5), "source"), 18);
+	s->dataFromJson(sJ);
+	json_decref(sJ);
+	uiSteps(s, 8);
+	cv(b, {-5.f}, crew::CV_INPUT + 2);
+	for (int i = 0; i < 4; i++) run(512);
+	CHECK(near(scaled(d, 0), 0.f), "Crew B's third input drives its binding, got %f", scaled(d, 0));
+	CHECK(near(b->outputs[crew::CV_OUTPUT + 2].getVoltage(), -5.f), "and its output reads it back, got %f", b->outputs[crew::CV_OUTPUT + 2].getVoltage());
+	b->leftExpander.moduleId = -1;
+	s->rightExpander.moduleId = -1;
+	run();
+	CHECK(near(scaled(d, 0), 0.5f), "unchaining the Crew lets go, got %f", scaled(d, 0));
+	unplug(b, crew::CV_INPUT + 2);
+	remove(a); remove(b);
+	remove(s); remove(d);
+}
+
 static void fieldsRoundTrip() {
 	Settings s;
 	for (const Field& f : fields::ALL) {
@@ -430,6 +480,7 @@ int main() {
 	wideAndSpread();
 	troupeMacros();
 	tetherCords();
+	stagePool();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;

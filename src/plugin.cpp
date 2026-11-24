@@ -10,4 +10,6 @@ void init(Plugin* p) {
 	p->addModel(modelWing);
 	p->addModel(modelTag);
 	p->addModel(modelTether);
+	p->addModel(modelStage);
+	p->addModel(modelCrew);
 }
