@@ -8,6 +8,7 @@
 #include "tether/Layout.hpp"
 #include "stage/Layout.hpp"
 #include "poses/Layout.hpp"
+#include "reel/Layout.hpp"
 #include <cstdio>
 
 using namespace puppeteer;
@@ -452,6 +453,60 @@ static void posesFade() {
 	remove(m); remove(d);
 }
 
+static void reelRecord() {
+	Dummy* d = dummy(600);
+	Module* m = add(modelReel, 601, json_pack("{s:o}", "binding", bindingJ({param(d, 0), param(d, 1)})));
+	const int tenth = int(E->getSampleRate() / 10);
+	auto tend = [&](Module* r) { for (int i = 0; i < 3; i++) { binding(r).update(nullptr); dynamic_cast<BindingHost*>(r)->tend(); run(64); } };
+	auto tap = [&](int id) { m->params[id].setValue(1.f); run(64); m->params[id].setValue(0.f); run(64); };
+	auto clip = [&](Module* r) {
+		json_t* j = r->dataToJson();
+		json_t* c = json_incref(json_array_get(json_object_get(j, "clips"), 0));
+		json_decref(j);
+		return c;
+	};
+	tend(m);
+	tap(reel::ARM_PARAM);
+	run(tenth);
+	d->paramQuantities[0]->setScaledValue(0.3f); run(tenth - 128);
+	d->paramQuantities[0]->setScaledValue(0.7f); run(tenth);
+	d->paramQuantities[0]->setScaledValue(0.4f); run(tenth);
+	tap(reel::ARM_PARAM); tend(m);
+	json_t* c = clip(m);
+	const int length = (int) json_integer_value(json_object_get(c, "length"));
+	CHECK(length >= 290 && length <= 310, "the clip starts at the first movement and runs to ARM, got %d ms", length);
+	CHECK(json_array_size(json_object_get(c, "tracks")) == 1, "only the control that moved has a track");
+	json_decref(c);
+
+	d->paramQuantities[0]->setScaledValue(0.9f); run();
+	tap(reel::CLIP_PARAM);
+	CHECK(near(scaled(d, 0), 0.3f), "playback starts where the take did, got %f", scaled(d, 0));
+	run(tenth);
+	CHECK(near(scaled(d, 0), 0.7f), "and follows it, got %f", scaled(d, 0));
+	run(3 * tenth);
+	CHECK(m->outputs[reel::PLAYING_OUTPUT].getVoltage() == 0.f, "one-shot stops at the end");
+	d->paramQuantities[0]->setScaledValue(0.1f); run();
+	CHECK(near(scaled(d, 0), 0.1f), "and lets go, got %f", scaled(d, 0));
+
+	tap(reel::LOOP_PARAM);
+	m->params[reel::RATE_PARAM].setValue(1.f); // twice as fast
+	tap(reel::CLIP_PARAM);
+	run(tenth / 2);
+	CHECK(near(scaled(d, 0), 0.7f), "at twice the rate, a twentieth of a second in is a tenth into the clip, got %f", scaled(d, 0));
+	run(tenth);
+	CHECK(near(scaled(d, 0), 0.3f), "and it loops, got %f", scaled(d, 0));
+	tap(reel::CLIP_PARAM);
+	CHECK(m->outputs[reel::PLAYING_OUTPUT].getVoltage() == 0.f, "pressing a playing clip stops it");
+
+	json_t* j = m->dataToJson();
+	Module* copy = add(modelReel, 602, j);
+	tend(copy);
+	c = clip(copy);
+	CHECK((int) json_integer_value(json_object_get(c, "length")) == length && json_is_true(json_object_get(c, "loop")), "clips survive a save and load");
+	json_decref(c);
+	remove(copy); remove(m); remove(d);
+}
+
 static void stagePool() {
 	Dummy* d = dummy(400);
 	json_t* bindingsJ = json_array();
@@ -535,6 +590,7 @@ int main() {
 	tetherCords();
 	stagePool();
 	posesFade();
+	reelRecord();
 	fieldsRoundTrip();
 	std::printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures != 0;

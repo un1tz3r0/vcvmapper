@@ -12,6 +12,7 @@
 #include "tether/View.hpp"
 #include "stage/View.hpp"
 #include "poses/View.hpp"
+#include "reel/View.hpp"
 #include "PanelSvg.hpp"
 #include "SvgPainter.hpp"
 
@@ -169,6 +170,28 @@ static void posesMockup(bool dark, int accent, const std::string& rackDir) {
 		[&](Painter& p, const Theme& theme) { poses::paint(p, theme, s); });
 }
 
+static void reelMockup(bool dark, int accent, const std::string& rackDir) {
+	reel::ViewState s;
+	s.filled[0] = s.filled[1] = s.filled[2] = s.filled[5] = true;
+	s.playing[1] = true;
+	s.selected = 1, s.seconds = 12.4f, s.start = 0.12f, s.end = 0.86f, s.head = 0.47f, s.loop = true;
+	s.line = "VCF: 3 TARGETS";
+	for (int k = 0; k < 3; k++) {
+		std::vector<Vec2f> c;
+		float v = 0.3f + 0.2f * k;
+		for (float x = 0; x <= 1.f; x += 0.02f) {
+			c.push_back({x, v});
+			v = std::clamp(v + 0.08f * std::sin(x * (9 + 4 * k) + k), 0.05f, 0.95f);
+			c.push_back({x, v});
+		}
+		s.curves.push_back(c);
+	}
+	if (dark)
+		s.line = "REC 0:07.3 OF 5:00.0", s.alert = true, s.head = NAN;
+	write(dark ? "reel-dark.svg" : "reel-light.svg", reel::panel(), dark, accent, rackDir,
+		[&](Painter& p, const Theme& theme) { reel::paint(p, theme, s); });
+}
+
 int main(int argc, char** argv) {
 	const std::string rack = argc > 1 ? argv[1] : "";
 	pinMockup("pin-light.svg", false, 0, rack);
@@ -183,6 +206,8 @@ int main(int argc, char** argv) {
 	stageMockup(true, 2, rack);
 	posesMockup(false, 1, rack);
 	posesMockup(true, 3, rack);
+	reelMockup(false, 2, rack);
+	reelMockup(true, 0, rack);
 	for (bool dark : {false, true})
 		write(dark ? "crew-dark.svg" : "crew-light.svg", crew::panel(), dark, 0, rack,
 			[](Painter& p, const Theme& theme) { p.label({p.width / 2, p.height / 2}, "CREW A", 8, theme.field); });
