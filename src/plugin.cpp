@@ -13,4 +13,5 @@ void init(Plugin* p) {
 	p->addModel(modelStage);
 	p->addModel(modelCrew);
 	p->addModel(modelPoses);
+	p->addModel(modelReel);
 }

@@ -109,6 +109,30 @@ Target nearestLight(Vec pos, app::ModuleWidget* owner, float radius) {
 	return best;
 }
 
+Target described(Target t) {
+	Module* m = APP->engine->getModule_NoLock(t.moduleId);
+	if (!m || !m->model)
+		return t;
+	t.plugin = m->model->plugin ? m->model->plugin->slug : "";
+	t.model = m->model->slug;
+	if (t.kind == Kind::Param && t.index < (int) m->paramQuantities.size())
+		t.name = m->paramQuantities[t.index]->name;
+	return t;
+}
+
+int recorded(int n, const std::function<const Target&(int)>& at, const Target& lane) {
+	for (int i = 0; i < n; i++)
+		if (at(i).key() == lane.key())
+			return i;
+	Target d = described(lane);
+	for (int i = 0; i < n && !d.name.empty(); i++) {
+		const Target& t = at(i);
+		if (t.model == d.model && t.plugin == d.plugin && t.name == d.name && !APP->engine->getModule_NoLock(t.moduleId))
+			return i;
+	}
+	return -1;
+}
+
 TargetInfo describe(const Target& t, float scaled) {
 	app::ModuleWidget* mw = widgetOf(t.moduleId);
 	if (!t || !mw || !mw->module)

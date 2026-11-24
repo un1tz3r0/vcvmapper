@@ -1,5 +1,6 @@
 #pragma once
 #include <rack.hpp>
+#include <functional>
 #include <tuple>
 
 namespace puppeteer {
@@ -40,6 +41,12 @@ bool remap(Target& t, app::ModuleWidget* owner);
 bool isMomentary(const Target& t);
 /** The light nearest `pos` (rack coordinates) within `radius`, skipping `owner`. */
 Target nearestLight(math::Vec pos, app::ModuleWidget* owner, float radius = 8.f);
+
+/** `t` with its module's plugin, model and control name as they are now, for matching it by name later. */
+Target described(Target t);
+/** Which of `n` stored targets, read by `at`, stands for `lane`: the same module and control, else the same named
+control of the same model on a module that has since gone, as when a module is replaced. -1 for none. */
+int recorded(int n, const std::function<const Target&(int)>& at, const Target& lane);
 
 struct TargetInfo {
 	std::string module, name, value;

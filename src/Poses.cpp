@@ -22,18 +22,6 @@ struct Table {
 replaced by another of the same model. */
 using Pose = std::vector<std::pair<Target, float>>;
 
-/** Fills in what a target's model and control are called now, for matching it by name later. */
-static Target described(Target t) {
-	Module* m = APP->engine->getModule_NoLock(t.moduleId);
-	if (!m || !m->model)
-		return t;
-	t.plugin = m->model->plugin ? m->model->plugin->slug : "";
-	t.model = m->model->slug;
-	if (t.index < (int) m->paramQuantities.size())
-		t.name = m->paramQuantities[t.index]->name;
-	return t;
-}
-
 static json_t* poseToJson(const Pose& pose) {
 	json_t* j = json_array();
 	for (const auto& [t, v] : pose)
@@ -270,23 +258,15 @@ struct Poses : Module, BindingHost {
 			t->filled[k] = !poses[k].empty();
 			std::fill(std::begin(t->values[k]), std::end(t->values[k]), NAN);
 			for (int i = 0; p && i < p->count; i++)
-				t->values[k][i] = find(poses[k], p->lanes[i].target);
+				{
+				const Pose& pose = poses[k];
+				int j = recorded((int) pose.size(), [&](int n) -> const Target& { return pose[n].first; }, p->lanes[i].target);
+				t->values[k][i] = j < 0 ? NAN : pose[j].second;
+			}
 		}
 		fresh.store(t, std::memory_order_release);
 		posted = serial;
 		dirty = false;
-	}
-
-	/** By module and control, else by name on a module of the same model that replaced the one captured. */
-	static float find(const Pose& pose, const Target& lane) {
-		for (const auto& [t, v] : pose)
-			if (t.key() == lane.key())
-				return v;
-		Target d = described(lane);
-		for (const auto& [t, v] : pose)
-			if (!d.name.empty() && t.model == d.model && t.plugin == d.plugin && t.name == d.name && !APP->engine->getModule_NoLock(t.moduleId))
-				return v;
-		return NAN;
 	}
 
 	Pose take() const {

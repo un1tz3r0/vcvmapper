@@ -159,7 +159,7 @@ A clip is the capture set's values over time.
   ARM again, a trigger or the length cap ends it. The cap is set in the context menu (one, five or thirty minutes, or
   none) so a forgotten ARM can't grow a patch without bound; it defaults to five. Every lane is read each block, but only changes are kept: an event (time, value)
   when a lane moves by more than 1/1000 of its travel. Knob gestures are short and sparse, so a patch holds minutes of
-  them; the patch stores events as base64 int16 pairs.
+  them; the patch stores each lane's events as base64 records of a millisecond tick and a 16-bit value.
 - **Clips**: eight, each with its own start and end (crop), loop or one-shot, and speed. The screen draws the selected
   clip's lanes as curves; two encoders move the crop handles and a third scrubs.
 - **Playback**: a PLAY trigger per clip, or a gate that plays while high; loop or one-shot; a RATE knob and CV.

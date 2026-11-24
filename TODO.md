@@ -60,7 +60,7 @@ The original plan, with the reasoning behind it, is the "vcvmapper plan" doc; ph
 
 ## 9. Recorder
 
-- [ ] Reel: arm and record on first movement, changes-only events, length cap, eight clips saved in the patch.
-- [ ] Crop, loop, one-shot, rate; PLAY, END and PLAYING jacks per clip.
-- [ ] Clip screen: lanes as curves, crop handles and scrub on encoders.
+- [x] Reel: arm and record on first movement, changes-only events, length cap, eight clips saved in the patch.
+- [x] Crop, loop, one-shot, rate; PLAY, END and PLAYING jacks per clip.
+- [x] Clip screen: lanes as curves, crop handles and scrub on encoders.
 - [ ] In Rack: record a filter sweep, crop it, loop it at half speed, then chain two clips by END into PLAY.

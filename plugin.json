@@ -1,7 +1,7 @@
 {
   "slug": "Puppeteer",
   "name": "Puppeteer",
-  "version": "2.3.5",
+  "version": "2.3.6",
   "license": "MIT",
   "brand": "un1tz3r0",
   "author": "Victor Michael Ondras-Condino",
@@ -66,6 +66,12 @@
       "name": "Poses",
       "description": "Captures a set of controls as 16 poses, recalls them with a glide and crossfades between two, either end muteable.",
       "tags": ["Utility", "Controller"]
+    },
+    {
+      "slug": "Reel",
+      "name": "Reel",
+      "description": "Records a set of controls' movements into eight clips and plays them back, cropped, looped and at any rate.",
+      "tags": ["Utility", "Controller", "Recording"]
     }
   ]
 }
