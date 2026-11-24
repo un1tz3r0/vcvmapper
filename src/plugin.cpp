@@ -12,4 +12,5 @@ void init(Plugin* p) {
 	p->addModel(modelTether);
 	p->addModel(modelStage);
 	p->addModel(modelCrew);
+	p->addModel(modelPoses);
 }

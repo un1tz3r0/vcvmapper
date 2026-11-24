@@ -33,6 +33,7 @@ lanes read back on the output's channels. */
 struct Lane {
 	Target target;
 	bool momentary = false;
+	bool snap = false; // a switch, which jumps between positions rather than sliding
 	float offset = 0.f; // this lane's share of the spread
 	Lease lease; // writers only; borrowed from the binding, which owns every lease
 
@@ -54,6 +55,7 @@ struct Lane {
 /** Everything process() needs, built on the UI thread and handed over whole, so the audio thread never sees a
 half-edited binding. */
 struct Plan {
+	uint64_t serial = 0; // tells plans apart where an address can be reused
 	Settings settings;
 	float rest = 0.f; // where 0 V puts the knob
 	int count = 0;
@@ -94,6 +96,19 @@ struct Binding {
 	void process(const Module::ProcessArgs& args, float volts) {
 		run(args, &volts, 1, nullptr, 1.f);
 	}
+	/** Writes `value(plan, i)` to lane i as an overwrite, bypassing the shape, for modules that store positions
+	rather than CV: 0..1 of the target's travel, or NAN to hand the lane back. Momentary lanes are left alone. */
+	template <class F>
+	void place(const Module::ProcessArgs& args, F&& value) {
+		Plan* p = swap(args.frame);
+		int64_t block = p && p->count ? APP->engine->getBlock() : 0;
+		for (int i = 0; p && i < p->count; i++) {
+			Lane& l = p->lanes[i];
+			l.position.store(l.read(block), std::memory_order_relaxed);
+			if (l.lease && !l.momentary)
+				set(l, *p, value(*p, i), args);
+		}
+	}
 	void bypass(const Module::ProcessArgs& args);
 
 	// UI thread
@@ -118,6 +133,7 @@ private:
 	Plan* retired = nullptr; // set by the audio thread before it clears `next`
 	bool posting = false, dirty = true, pasted = false;
 	int frame = 0;
+	uint64_t serials = 0;
 	int known = -1; // the target count the user has seen, -1 to take the next one
 	std::map<Key, Lease> leases;
 	std::vector<Lease> doomed; // released once the plan that still mentions them is retired
@@ -128,6 +144,8 @@ private:
 	Plan* swap(int64_t frame);
 	void run(const Module::ProcessArgs& args, const float* volts, int channels, Output* out, float depth);
 	void drive(Lane& lane, const Plan& plan, float volts, float depth, const Module::ProcessArgs& args);
+	void set(Lane& lane, const Plan& plan, float value, const Module::ProcessArgs& args);
+	static void letGo(Lane& lane);
 	void collect();
 	std::vector<std::pair<Target, bool>> resolve(app::ModuleWidget* owner);
 	Plan* build(const std::vector<std::pair<Target, bool>>& resolved);
@@ -137,6 +155,8 @@ private:
 struct BindingHost {
 	virtual ~BindingHost() = default;
 	virtual Binding* bindingAt(int index) = 0;
+	/** UI-thread work the widget does each frame after updating the bindings. */
+	virtual void tend() {}
 };
 
 } // namespace puppeteer
