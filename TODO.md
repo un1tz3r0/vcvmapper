@@ -54,13 +54,13 @@ The original plan, with the reasoning behind it, is the "vcvmapper plan" doc; ph
 ## 8. Snapshots and morph
 
 - [ ] Core: `Binding::process` with a value per lane; captured values keyed by target with model and item name.
-- [ ] Poses: capture set, 16 poses, capture, recall with glide, morph along the poses, SELECT CV.
+- [ ] Poses: capture set, 16 poses, capture, recall with glide, A/B crossfader with mutes, SELECT CV.
 - [ ] Switches snap to the nearer pose; momentary buttons are left out.
-- [ ] In Rack: capture three poses of a voice, morph through them by CV while turning a knob by hand.
+- [ ] In Rack: capture three poses of a voice, crossfade between two by CV, then mute A and fade from the hand-set patch to B.
 
 ## 9. Recorder
 
-- [ ] Reel: arm and record on first movement, changes-only events, eight clips saved in the patch.
+- [ ] Reel: arm and record on first movement, changes-only events, length cap, eight clips saved in the patch.
 - [ ] Crop, loop, one-shot, rate; PLAY, END and PLAYING jacks per clip.
 - [ ] Clip screen: lanes as curves, crop handles and scrub on encoders.
 - [ ] In Rack: record a filter sweep, crop it, loop it at half speed, then chain two clips by END into PLAY.

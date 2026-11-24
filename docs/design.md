@@ -139,13 +139,15 @@ are, so a snapshot or clip survives a module being replaced by another of the sa
 
 A pose is the capture set's values at one moment.
 
-- **Panel**: 12 HP. A screen listing the poses; eight pose buttons with lights; CAPTURE; RECALL; a MORPH knob and CV;
-  a SELECT CV (0 to 10 V picks a pose) with a trigger; GLIDE (recall time).
+- **Panel**: 12 HP. A screen listing the poses; eight pose buttons with lights; CAPTURE; RECALL; a crossfader knob
+  and CV; A and B buttons with lights; a SELECT CV (0 to 10 V picks a pose) with a trigger; GLIDE (recall time).
 - **Capture**: CAPTURE then a pose button stores the set's values there. Up to 16 poses: eight on buttons, the rest on
   the screen and SELECT.
 - **Recall**: a pose button, a RECALL trigger or SELECT jumps to that pose, gliding over GLIDE ms, then lets go.
-- **Morph**: with MORPH patched or turned, the set follows a position along the poses in order: 2.5 is halfway
-  between the third and fourth. It holds the set while it moves and lets go GLIDE after it stops.
+- **Crossfader**, after the Octatrack's scenes: each end has a pose, chosen by holding A or B and pressing a pose
+  button. Tapping A or B mutes that end, and a muted end stands for the controls as the hand left them, so the fader
+  blends from the patch as it is towards the other pose. Only lanes the unmuted poses hold move. The fader holds the
+  set while it moves and lets go GLIDE after it stops; with both ends muted it does nothing.
 - **Switches and buttons** don't interpolate. A switch takes the nearer pose's value; a momentary button is left out of
   capture, since its value is only ever a moment.
 
@@ -154,7 +156,8 @@ A pose is the capture set's values at one moment.
 A clip is the capture set's values over time.
 
 - **Recording**: ARM, then the first movement of any control in the set starts the clip (or a REC trigger does), and
-  ARM again or a trigger ends it. Every lane is read each block, but only changes are kept: an event (time, value)
+  ARM again, a trigger or the length cap ends it. The cap is set in the context menu (one, five or thirty minutes, or
+  none) so a forgotten ARM can't grow a patch without bound; it defaults to five. Every lane is read each block, but only changes are kept: an event (time, value)
   when a lane moves by more than 1/1000 of its travel. Knob gestures are short and sparse, so a patch holds minutes of
   them; the patch stores events as base64 int16 pairs.
 - **Clips**: eight, each with its own start and end (crop), loop or one-shot, and speed. The screen draws the selected
@@ -164,9 +167,9 @@ A clip is the capture set's values over time.
   gate out let clips sequence each other.
 - **Sequencing** beyond that belongs to Rack's own sequencers driving the triggers.
 
-### Decisions for Vic
+### Decided
 
-1. Names: Poses and Reel are working names.
-2. Morph along the poses in order (above), or between two chosen poses A and B, or both with a switch.
-3. Recording by changes only (above), or at a fixed rate, which is simpler to edit but larger to save.
-4. Clip length cap: none (changes only keeps it small), or a fixed one such as five minutes.
+1. Names: Poses and Reel.
+2. Morph is an A/B crossfader with selectable poses and a mute per end, not a walk along the poses.
+3. Recording keeps changes only.
+4. Clip length has a cap set in the context menu, defaulting to five minutes, with none as an option.
