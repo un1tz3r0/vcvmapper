@@ -168,4 +168,7 @@ int main(int argc, char** argv) {
 	tetherMockup(true, 3, rack);
 	stageMockup(false, 0, rack);
 	stageMockup(true, 2, rack);
+	for (bool dark : {false, true})
+		write(dark ? "crew-dark.svg" : "crew-light.svg", crew::panel(), dark, 0, rack,
+			[](Painter& p, const Theme& theme) { p.label({p.width / 2, p.height / 2}, "CREW A", 8, theme.field); });
 }

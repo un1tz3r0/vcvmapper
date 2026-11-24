@@ -66,3 +66,47 @@ inline kit::Panel panel() {
 }
 
 } // namespace stage
+
+// Crew, the jack expander: eight more inputs, each with a readback output, to Stage's right. Up to CREWS chain on.
+namespace crew {
+
+constexpr int CREWS = 3, JACKS = stage::JACKS;
+enum ParamId { PARAMS_LEN };
+enum InputId { CV_INPUT, INPUTS_LEN = CV_INPUT + JACKS };
+enum OutputId { CV_OUTPUT, OUTPUTS_LEN = CV_OUTPUT + JACKS };
+enum LightId { LIGHTS_LEN };
+
+constexpr float WIDTH = 30.48f, IN_X = 8.f, OUT_X = 22.f;
+constexpr kit::Panel::Rect GLASS{{3.f, 13.f}, {WIDTH - 3.f, 21.f}};
+
+inline float rowY(int i) {
+	return 33.f + i * 11.4f;
+}
+
+inline kit::Panel panel() {
+	using P = kit::Panel;
+	P p{WIDTH, 128.5f, GLASS};
+	p.text({WIDTH / 2, 8.4f}, "crew", P::TITLE);
+	p.text({IN_X, 26.f}, "IN");
+	p.boxes.push_back({{OUT_X - 5.5f, 22.8f}, {OUT_X + 5.5f, rowY(JACKS - 1) + 5.f}});
+	p.text({OUT_X, 26.f}, "OUT", P::BOXED);
+	const char* numbers[] = {"1", "2", "3", "4", "5", "6", "7", "8"};
+	for (int i = 0; i < JACKS; i++) {
+		p.controls.push_back({P::INPUT, CV_INPUT + i, {IN_X, rowY(i)}, {}});
+		p.controls.push_back({P::OUTPUT, CV_OUTPUT + i, {OUT_X, rowY(i)}, {}});
+		p.text({(IN_X + OUT_X) / 2 - 1.2f, rowY(i)}, numbers[i]);
+	}
+	p.text({WIDTH / 2, 122.6f}, "un1tz3r0", P::BRAND);
+	return p;
+}
+
+} // namespace crew
+
+namespace stage {
+
+/** Where a binding's CV comes from: -1 nowhere, 0-7 Stage's own inputs, 8-31 those of the Crews chained to its
+right (A, B and C), 32-39 a macro. */
+constexpr int NO_SOURCE = -1, PORTS = JACKS * (1 + crew::CREWS), MACRO_SOURCE = PORTS, SOURCES = PORTS + MACROS;
+
+} // namespace stage
+

@@ -12,3 +12,4 @@ extern Model* modelWing;
 extern Model* modelTag;
 extern Model* modelTether;
 extern Model* modelStage;
+extern Model* modelCrew;

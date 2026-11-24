@@ -12,11 +12,14 @@
 using namespace puppeteer;
 using namespace stage;
 
-/** Where a binding's CV comes from: -1 nowhere, 0-7 an input jack, 8-15 a macro. */
-constexpr int NO_SOURCE = -1, MACRO_SOURCE = JACKS, SOURCES = JACKS + MACROS;
-
-static std::string sourceName(int s) {
-	return s < 0 ? "--" : s < MACRO_SOURCE ? string::f("IN%d", s + 1) : string::f("M%d", s - MACRO_SOURCE + 1);
+static std::string sourceName(int s, bool longName = false) {
+	if (s < 0)
+		return longName ? "None" : "--";
+	if (s >= MACRO_SOURCE)
+		return string::f(longName ? "Macro %d" : "M%d", s - MACRO_SOURCE + 1);
+	if (s < JACKS)
+		return string::f(longName ? "Input %d" : "IN%d", s + 1);
+	return string::f(longName ? "Crew %c input %d" : "%c%d", 'A' + s / JACKS - 1, s % JACKS + 1);
 }
 
 /** The edit page's items: the path, then every setting. */
@@ -60,6 +63,8 @@ struct Stage : Module, BindingHost {
 	int cursor[PAGES] = {}; // per page; the bindings page's is the selected binding, the edit page's its item
 	int accent = 0;
 	int tick = 0;
+	Input* ins[PORTS] = {}; // audio thread: this block's jacks, by source
+	Output* outs[PORTS] = {};
 
 	Stage() {
 		config(PARAMS_LEN, INPUTS_LEN, OUTPUTS_LEN, LIGHTS_LEN);
@@ -100,30 +105,50 @@ struct Stage : Module, BindingHost {
 
 	/** The source's voltage on its first channel, NAN when it has none. */
 	float sourceVolts(int s) {
-		return s < 0 ? NAN : s < MACRO_SOURCE ? (inputs[s].isConnected() ? inputs[s].getVoltage() : NAN) : 5.f * macros[s - MACRO_SOURCE].load();
+		if (s >= MACRO_SOURCE)
+			return 5.f * macros[s - MACRO_SOURCE].load();
+		return s >= 0 && ins[s] && ins[s]->isConnected() ? ins[s]->getVoltage() : NAN;
+	}
+
+	/** Gathers the jacks of Stage and of the Crews touching it in a chain to its right. A Crew does nothing in its
+	own process(), and cables only move voltages between module steps, so its ports are safe to use here. */
+	void gather() {
+		std::fill(std::begin(ins), std::end(ins), nullptr);
+		std::fill(std::begin(outs), std::end(outs), nullptr);
+		for (int j = 0; j < JACKS; j++) {
+			ins[j] = &inputs[CV_INPUT + j];
+			outs[j] = &outputs[CV_OUTPUT + j];
+		}
+		Module* x = rightExpander.module;
+		for (int c = 1; c <= crew::CREWS && x && x->model == modelCrew; c++, x = x->rightExpander.module)
+			for (int j = 0; j < JACKS; j++) {
+				ins[c * JACKS + j] = &x->inputs[crew::CV_INPUT + j];
+				outs[c * JACKS + j] = &x->outputs[crew::CV_OUTPUT + j];
+			}
 	}
 
 	void process(const ProcessArgs& args) override {
+		gather();
 		// Each jack's output reads back the first binding it feeds.
-		bool claimed[JACKS] = {};
+		bool claimed[PORTS] = {};
 		for (int i = 0; i < BINDINGS; i++) {
 			int s = sources[i].load(std::memory_order_relaxed);
 			Binding& b = bindings[i];
-			if (s < 0)
-				b.bypass(args);
-			else if (s >= MACRO_SOURCE)
+			if (s >= MACRO_SOURCE)
 				b.process(args, 5.f * macros[s - MACRO_SOURCE].load(std::memory_order_relaxed));
+			else if (s < 0 || !ins[s])
+				b.bypass(args);
 			else if (!claimed[s]) {
 				claimed[s] = true;
-				b.process(args, inputs[CV_INPUT + s], outputs[CV_OUTPUT + s]);
+				b.process(args, *ins[s], *outs[s]);
 			}
 			else
-				b.process(args, inputs[CV_INPUT + s], 1.f);
+				b.process(args, *ins[s], 1.f);
 		}
-		for (int j = 0; j < JACKS; j++)
-			if (!claimed[j]) {
-				outputs[CV_OUTPUT + j].setChannels(1);
-				outputs[CV_OUTPUT + j].setVoltage(0.f);
+		for (int j = 0; j < PORTS; j++)
+			if (outs[j] && !claimed[j]) {
+				outs[j]->setChannels(1);
+				outs[j]->setVoltage(0.f);
 			}
 
 		if (++tick >= History::EVERY) {
@@ -575,7 +600,7 @@ struct StageWidget : ModuleWidget {
 		menu->addChild(createIndexSubmenuItem("Source", [] {
 			std::vector<std::string> names;
 			for (int s = NO_SOURCE; s < SOURCES; s++)
-				names.push_back(s < 0 ? "None" : s < MACRO_SOURCE ? string::f("Input %d", s + 1) : string::f("Macro %d", s - MACRO_SOURCE + 1));
+				names.push_back(sourceName(s, true));
 			return names;
 		}(), [=] { return (size_t) (m->sources[sel] + 1); }, [=](size_t i) { m->sources[sel] = int(i) - 1; }));
 		appendBindingMenu(menu, m, sel, [=](bool add) {

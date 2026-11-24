@@ -42,12 +42,12 @@ The original plan, with the reasoning behind it, is the "vcvmapper plan" doc; ph
 ## 7. Stage, the hub
 
 - [x] Layout and mockup: screen, soft buttons, eight encoders, d-pad, 8 in and 8 out.
-- [ ] Binding pool of 64 with jack, expander and macro sources.
+- [x] Binding pool of 64 with jack, expander and macro sources.
 - [x] Screen framework: pages, soft-button and encoder labels, cursor.
 - [x] Keyboard focus: selection on click, `onSelectKey` for arrows, Enter, Escape, Backspace and Shift, lit bezel.
 - [x] Pages: Bindings, Edit, Macros, Groups.
 - [x] History ring buffer per binding and the rolling graph on the Edit page.
-- [ ] Input and output jack expanders.
+- [x] Input and output jack expanders.
 - [ ] Waterfall view.
 - [ ] In Rack: build and edit a patch by keyboard alone, then by panel alone.
 

@@ -45,6 +45,8 @@ Everything Pin's menu offers (more targets, paths, twins, shape, timing) is in t
 - **Macros**: the eight encoders are the eight macros.
 - **Groups**: every group in the rack, with how many of Stage's targets sit in it. *SELECT* hands a group to Rack's selection.
 
+**Crew** (6 HP) adds eight more inputs to the Stage on its left, each with an output reading back the first binding it feeds. Up to three chain on, and their inputs appear as sources A1 to C8. Its screen says which crew it is, or that no Stage is in reach.
+
 Click the screen and its rim lights: the arrows, Enter, Esc, Backspace, Tab and Shift then work it from the keyboard, and the d-pad, BACK and SHIFT do the same from the panel.
 
 ## Building
