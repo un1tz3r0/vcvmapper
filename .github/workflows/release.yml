@@ -1,0 +1,112 @@
+name: Release
+
+# When a push to main changes plugin.json's version, tag it vX.Y.Z and publish a release with the
+# four .vcvplugin packages. They come from the merged PR's own Build run when that run built exactly
+# what landed on main; otherwise from the Build run of the push itself. Run it by hand to release the
+# current version if it has no tag yet.
+
+on:
+  push:
+    branches: [main]
+    paths: [plugin.json]
+  workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: read
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  GH_REPO: ${{ github.repository }}
+  SHA: ${{ github.sha }}
+  BEFORE: ${{ github.event.before }}
+  PLATFORMS: win-x64 lin-x64 mac-x64 mac-arm64
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check version
+        id: version
+        run: |
+          version=$(jq -r .version plugin.json)
+          git cat-file -e "$BEFORE^{commit}" 2>/dev/null || BEFORE=$(git rev-parse "$SHA^1")
+          echo "BEFORE=$BEFORE" >> "$GITHUB_ENV"
+          previous=$(git show "$BEFORE:plugin.json" | jq -r .version)
+          echo "version $previous -> $version"
+          if [ "$version" = "$previous" ] && [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "Version unchanged, nothing to release."
+          elif git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "Tag v$version already exists, nothing to release."
+          else
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find the merged PR's build
+        if: steps.version.outputs.version
+        id: pr
+        run: |
+          pr=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at)][0] // empty')
+          [ -n "$pr" ] || { echo "No merged PR for $SHA."; exit 0; }
+          number=$(jq -r .number <<<"$pr"); head=$(jq -r .head.sha <<<"$pr")
+          echo "PR #$number, head $head"
+
+          run=$(gh run list -w build.yml -e pull_request -c "$head" -L 1 --json databaseId,createdAt,status,conclusion --jq '.[0] // empty')
+          [ -n "$run" ] || { echo "No Build run for the PR head."; exit 0; }
+          id=$(jq -r .databaseId <<<"$run")
+          [ "$(jq -r .status <<<"$run")" = completed ] || gh run watch "$id" --interval 30 >/dev/null || true
+          conclusion=$(gh run view "$id" --json conclusion --jq .conclusion)
+          [ "$conclusion" = success ] || { echo "PR run $id concluded $conclusion."; exit 0; }
+
+          # The PR run built the PR merged onto main as it was then. It matches this commit when main
+          # hadn't moved since: the PR already contained it, or the run started after it landed.
+          landed=$(TZ=UTC git show -s --date=format-local:%Y-%m-%dT%H:%M:%SZ --format=%cd "$BEFORE")
+          started=$(jq -r .createdAt <<<"$run")
+          if git merge-base --is-ancestor "$BEFORE" "$head" || [[ "$started" > "$landed" ]]; then
+            echo "Using PR run $id."
+            echo "run=$id" >> "$GITHUB_OUTPUT"
+          else
+            echo "PR run $id predates main at $BEFORE, so it built different code."
+          fi
+
+      - name: Fall back to this push's build
+        if: steps.version.outputs.version && !steps.pr.outputs.run
+        id: push
+        run: |
+          for _ in $(seq 20); do
+            id=$(gh run list -w build.yml -e push -c "$SHA" -L 1 --json databaseId --jq '.[0].databaseId // empty')
+            [ -n "$id" ] && break
+            sleep 15
+          done
+          [ -n "$id" ] || { echo "::error::No Build run for $SHA."; exit 1; }
+          gh run watch "$id" --interval 30 --exit-status >/dev/null || { echo "::error::Build run $id failed."; exit 1; }
+          echo "Using push run $id."
+          echo "run=$id" >> "$GITHUB_OUTPUT"
+
+      - name: Download packages
+        if: steps.version.outputs.version
+        run: |
+          run=${{ steps.pr.outputs.run || steps.push.outputs.run }}
+          gh run download "$run" -D artifacts
+          mkdir dist
+          for p in $PLATFORMS; do
+            f=$(find artifacts -name "*-${{ steps.version.outputs.version }}-$p.vcvplugin" | head -1)
+            [ -n "$f" ] || { echo "::error::Run $run has no $p package for ${{ steps.version.outputs.version }}."; exit 1; }
+            cp "$f" dist/
+          done
+          ls -l dist
+
+      - name: Publish release
+        if: steps.version.outputs.version
+        run: |
+          v=v${{ steps.version.outputs.version }}
+          gh release create "$v" dist/*.vcvplugin --target "$SHA" --title "Puppeteer $v" --generate-notes
